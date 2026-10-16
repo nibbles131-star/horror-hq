@@ -11,6 +11,8 @@
  * One-time requirements:
  *   - appsscript.json from the repo (it declares the scopes used here)
  *   - Apps Script API switched on at https://script.google.com/home/usersettings
+ *   - the script linked to a standard Google Cloud project with the Apps Script API enabled
+ *     (the hidden default project can't call it)
  */
 
 var UPDATER_FOLDER_NAME = 'Horror HQ Code';
@@ -28,8 +30,12 @@ function updaterFetch_(method, path, payload) {
   var code = res.getResponseCode();
   var body = res.getContentText();
   if (code >= 300) {
-    if (code === 403 && body.indexOf('Apps Script API') >= 0) {
+    if (code === 403 && body.indexOf('User has not enabled the Apps Script API') >= 0) {
       throw new Error('Switch on "Google Apps Script API" at https://script.google.com/home/usersettings, wait a minute, then run this again.');
+    }
+    if (code === 403 && /has not been used in project|SERVICE_DISABLED|it is disabled/.test(body)) {
+      throw new Error('This script is still on Google\'s hidden default Cloud project, which can\'t use the Apps Script API. ' +
+        'Link it to your own Cloud project (SETUP.md, "Cloud project" step), then run this again. Google said: ' + body.slice(0, 400));
     }
     throw new Error('Apps Script API ' + method + ' ' + path + ' failed (' + code + '): ' + body);
   }
