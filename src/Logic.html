@@ -21,7 +21,7 @@ var HQ = (function () {
   }
 
   function normalise(s) {
-    return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return String(s || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   }
 
   function decadeOf(y) { return y ? (Math.floor(y / 10) * 10) + 's' : ''; }
