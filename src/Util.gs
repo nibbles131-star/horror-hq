@@ -62,7 +62,7 @@ function parseFilmKey_(key) {
 function matchKey_(key) {
   return String(key || '')
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 }
@@ -109,7 +109,7 @@ function makeIdGen_(prefix, width, start) {
 }
 
 function slug_(s) {
-  return String(s || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
