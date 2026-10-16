@@ -1,0 +1,423 @@
+<script>
+/* Pure Excavator logic, shared with the Node tests (tools/app_test.js). */
+var ExcLogic = (function () {
+  var TYPES = ['Yearly Round', 'Bestiary Top-Up', 'Alphabet / Title Hunt', 'Franchise Hunt', 'Seasonal Top-Up', 'Challenge Criteria', 'Curated List', 'Freeform'];
+  var DESTINATIONS = ['Yearly List 📆', 'Horror Bestiary 👹', 'Alphabet List 🔤', 'Franchise Tracker 🔪', 'Seasonal & Countdowns 🎃', 'Curated Lists 🩸',
+    'Classic Studios 🦇', 'Bubblegum & Cunt 🫧', 'Film Library only', 'Other / decide later'];
+  var DEST_FAMILY = { 'Yearly List 📆': 'Yearly', 'Horror Bestiary 👹': 'Bestiary', 'Alphabet List 🔤': 'Alphabet', 'Franchise Tracker 🔪': 'Franchise',
+    'Seasonal & Countdowns 🎃': 'Seasonal', 'Curated Lists 🩸': 'Curated', 'Classic Studios 🦇': 'Classics', 'Bubblegum & Cunt 🫧': 'Bubblegum' };
+  var STYLES = ['Quick dig', 'Broad sweep', 'Deep excavation', 'Community-heavy', 'Obscure deep cuts'];
+  var POLICIES = ['Fresh only • exclude every known/surfaced film', 'Fresh only • exclude every known film',
+    'Exclude seen + rejected • allow old maybes/candidates', 'Only exclude seen • broadest practical search', 'Research regardless • show known matches'];
+  var DECISIONS = ['⏳ Pending', '✅ Approved', '👁️ Seen / unlisted', '🚫 Rejected', '👀 Maybe', '📚 Already tracked'];
+
+  /** Same text as the old ARNOLD REQUEST cell (B7). */
+  function requestLine(d) {
+    var parts = [['TYPE', d.search_type], ['DESTINATION', d.destination], ['WANT', d.wanted], ['STYLE', d.style], ['KNOWN POLICY', d.known_policy],
+      ['SLOT/YEAR/CATEGORY', d.target], ['MUST INCLUDE', d.must_include], ['AVOID', d.avoid], ['BRIEF', d.brief]];
+    return parts.filter(function (p) { return p[1] !== undefined && p[1] !== null && String(p[1]) !== ''; })
+      .map(function (p) { return p[0] + ': ' + p[1]; }).join(' • ');
+  }
+
+  function isSeen(f) {
+    return f.status === 'Watched' || f.status === 'DNF' || (f.memory && f.memory[0] === '👁️ Seen / unlisted');
+  }
+
+  /** Film keys Arnold must not suggest under a known-film policy. */
+  function exclusions(M, data, policy) {
+    var out = {};
+    var add = function (k) { if (k) out[k] = true; };
+    if (/^Research regardless/.test(policy || '')) return [];
+    M.films.forEach(function (f) {
+      if (/^Fresh only/.test(policy || '')) return add(f.key);
+      if (/^Only exclude seen/.test(policy)) { if (isSeen(f)) add(f.key); return; }
+      if (/^Exclude seen \+ rejected/.test(policy)) { if (isSeen(f) || (f.memory && f.memory[0] === '🚫 Rejected')) add(f.key); return; }
+      add(f.key);
+    });
+    if (/known\/surfaced/.test(policy || '') && data) data.candidates.forEach(function (c) { add(c[3]); });
+    return Object.keys(out).sort(function (a, b) { return a.localeCompare(b); });
+  }
+
+  /** The whole message to paste to Arnold. */
+  function arnoldPrompt(M, data, d) {
+    var ex = exclusions(M, data, d.known_policy);
+    return 'RUN EXCAVATOR\n' + requestLine(d) + '\n\n' +
+      (ex.length ? 'Already known to me, so never suggest any of these (' + ex.length + '):\n' + ex.join('; ') + '\n\n' : '') +
+      'Apply the brief first. Where it doesn\'t say otherwise, my usual taste still applies: bleak, character-driven, body horror, ' +
+      'post-apocalyptic, psychological misery; skip found footage unless exceptional; go easy on war horror, routine priest possession, westerns and generic slasher filler.\n\n' +
+      'Reply with one line per film and nothing else, exactly like this:\n' +
+      'Title (YYYY) | Why it fits | Research source(s) | Community / evidence note | Country\n' +
+      '(Country can list several, separated by commas.)';
+  }
+
+  function clean(s) { return String(s || '').replace(/\*\*|__|`/g, '').replace(/^["“”']+|["“”']+$/g, '').trim(); }
+
+  /** Reads Arnold's answer: pipe lines, markdown tables or tab-separated rows. */
+  function parseArnold(text) {
+    var rows = [];
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var l = line.trim();
+      if (!l || /^\|?\s*:?-{3,}/.test(l)) return;
+      var parts = l.indexOf('|') >= 0 ? l.replace(/^\|/, '').replace(/\|$/, '').split('|') : l.split('\t');
+      parts = parts.map(clean);
+      if (parts.length < 2) return;
+      parts[0] = parts[0].replace(/^(\d+[.)]|[-*•])\s+/, '');
+      var m = parts[0].match(/^(.*\S)\s*\((\d{4})\)$/);
+      if (!m && /^\d{4}$/.test(parts[1])) { m = [null, parts[0], parts[1]]; parts.splice(1, 1); }
+      if (!m || /why it fits/i.test(l)) return;
+      rows.push({ title: m[1].trim(), year: Number(m[2]), why: parts[1] || '', sources: parts[2] || '', evidence: parts[3] || '', countries: parts[4] || '' });
+    });
+    return rows;
+  }
+
+  /** Same buckets as the server's knownBefore_, for the import preview. */
+  function knownBefore(M, data, film, surfacedKeys) {
+    if (!film) return 'No';
+    if ((M.entriesByFilm[film.id] || []).length) return 'Yes • tracked';
+    if (film.status === 'Watched' || film.status === 'DNF') return 'Yes • seen';
+    var ds = film.memory ? film.memory[0] : '';
+    if (ds === '🚫 Rejected') return 'Yes • rejected';
+    if (ds === '👀 Maybe') return 'Yes • maybe';
+    if (ds === '👁️ Seen / unlisted') return 'Yes • seen';
+    if (ds) return 'Yes • candidate';
+    if (surfacedKeys[film.key]) return 'Yes • surfaced before';
+    return 'Yes • tracked';
+  }
+
+  /** True when a candidate should never have been suggested under the policy. */
+  function breaksPolicy(known, policy) {
+    if (known === 'No' || /^Research regardless/.test(policy || '')) return false;
+    if (/^Fresh only/.test(policy || '')) return true;
+    if (/^Only exclude seen/.test(policy)) return known === 'Yes • seen';
+    if (/^Exclude seen \+ rejected/.test(policy)) return known === 'Yes • seen' || known === 'Yes • rejected';
+    return true;
+  }
+
+  /** The old Archive "Current state" column: discovery state • viewing state • lists. */
+  function currentState(M, filmId) {
+    var f = M.byId[filmId];
+    if (!f) return 'Not in library';
+    var lists = HQ.listNames(M, f);
+    return [f.memory && f.memory[0] ? f.memory[0] : 'Library', f.status, lists.length ? lists.join(', ') : 'No list'].join(' • ');
+  }
+
+  /** Latest decision per candidate. */
+  function latestDecisions(data) {
+    var by = {};
+    data.decisions.forEach(function (d) {
+      var cur = by[d[1]];
+      if (!cur || String(d[6] || d[4]) >= String(cur[6] || cur[4])) by[d[1]] = d;
+    });
+    return by;
+  }
+
+  return { TYPES: TYPES, DESTINATIONS: DESTINATIONS, DEST_FAMILY: DEST_FAMILY, STYLES: STYLES, POLICIES: POLICIES, DECISIONS: DECISIONS,
+    requestLine: requestLine, exclusions: exclusions, arnoldPrompt: arnoldPrompt, parseArnold: parseArnold, knownBefore: knownBefore,
+    breaksPolicy: breaksPolicy, currentState: currentState, latestDecisions: latestDecisions };
+})();
+if (typeof module !== 'undefined') module.exports = ExcLogic;
+</script>
+<style>
+  .cand { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; background: var(--bg2); }
+  .cand.decided { opacity: .75; }
+  .cand h3 { margin: 0 0 4px; font-size: 16px; }
+  .cand .why { margin: 6px 0; }
+  .cand .src a { color: var(--muted); }
+  .decide { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+  .decide .btn.on { background: var(--blood); border-color: var(--blood); color: #fff; }
+  .warn { color: var(--warn); }
+  .reqbox { background: var(--bg2); border: 1px dashed var(--line2); border-radius: 8px; padding: 12px 14px; font-size: 13px; white-space: pre-wrap; }
+</style>
+<script>
+/* Horror Excavator: build the hunt, hand it to Arnold, import his finds, decide, and keep the archive. */
+(function () {
+  var TABS = [['hunt', '⛏️ Build the hunt'], ['decide', '✅ Decide'], ['archive', '🗄️ Discovery Archive']];
+  var st = { tab: 'hunt', data: null, loading: false, error: '', draft: null, paste: '', preview: null, search: null,
+    opts: {}, aq: '', adec: '', asearch: '', apage: 0 };
+
+  function load(a) {
+    if (st.data || st.loading) return;
+    st.loading = true;
+    a.call('apiExcavatorData').then(function (d) {
+      st.data = d; st.loading = false;
+      st.draft = Object.assign({ search_type: 'Freeform', destination: 'Other / decide later', wanted: 10, style: 'Broad sweep',
+        known_policy: ExcLogic.POLICIES[0], target: '', must_include: '', avoid: '', brief: '' }, d.draft || {});
+      if (openSearches().length) st.tab = st.tab === 'hunt' && pendingCount() ? 'decide' : st.tab;
+      a.render();
+    }).catch(function (e) { st.loading = false; st.error = e.message; a.render(); });
+  }
+
+  function decisions() { return ExcLogic.latestDecisions(st.data); }
+  function openSearches() { return st.data.searches.filter(function (s) { return s.state === 'Open'; }); }
+  function pendingCount() {
+    var dec = decisions(), open = {};
+    openSearches().forEach(function (s) { open[s.search_id] = true; });
+    return st.data.candidates.filter(function (c) { return open[c[1]] && (!dec[c[0]] || dec[c[0]][2] === '⏳ Pending'); }).length;
+  }
+
+  function linkify(a, text) {
+    return String(text || '').split(/(\s+|;\s*)/).map(function (bit) {
+      return /^https?:\/\//.test(bit) ? '<a href="' + a.esc(bit) + '" target="_blank" rel="noopener">' + a.esc(bit.replace(/^https?:\/\/(www\.)?/, '').slice(0, 48)) + '</a>' : a.esc(bit);
+    }).join('');
+  }
+
+  function copyText(a, text, label) {
+    var done = function () { a.toast(label + ' copied. Paste it to Arnold.', 'ok'); };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { a.toast('Copy blocked: select the text and copy it by hand.', 'bad'); }
+      ta.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+
+  // ---------------------------------------------------------------- hunt
+  function renderHunt(a, M) {
+    var d = st.draft;
+    var fam = ExcLogic.DEST_FAMILY[d.destination];
+    var targets = fam ? M.collList.filter(function (c) { return c.family === fam; }).map(function (c) { return c.name; }) : [];
+    var ex = ExcLogic.exclusions(M, st.data, d.known_policy);
+    var sel = function (key, values) { return '<select data-xd="' + key + '" style="width:100%">' + a.options(values, d[key], '—') + '</select>'; };
+    var inp = function (key, ph, extra) { return '<input class="input" data-xd="' + key + '" value="' + a.esc(d[key] || '') + '" placeholder="' + a.esc(ph || '') + '" ' + (extra || '') + ' style="width:100%">'; };
+    var preview = '';
+    if (st.preview) {
+      var surfaced = {};
+      st.data.candidates.forEach(function (c) { surfaced[c[3]] = true; });
+      var bad = 0;
+      preview = '<div class="panel" style="margin-top:16px"><h2>Arnold found ' + st.preview.length + ' film' + (st.preview.length === 1 ? '' : 's') + '</h2>' +
+        (st.preview.length ? '<table><thead><tr><th>Film</th><th>Why it fits</th><th>Known before?</th><th>Country</th></tr></thead><tbody>' + st.preview.map(function (r) {
+          var key = r.title + ' (' + r.year + ')';
+          var hits = HQ.search(M, key);
+          var film = hits.filter(function (f) { return HQ.normalise(f.key) === HQ.normalise(key); })[0] ||
+            M.films.filter(function (f) { return f.aliases.some(function (x) { return HQ.normalise(x.key) === HQ.normalise(key); }); })[0];
+          var known = ExcLogic.knownBefore(M, st.data, film, surfaced);
+          var breaks = ExcLogic.breaksPolicy(known, d.known_policy);
+          if (breaks) bad++;
+          return '<tr><td><b>' + a.esc(key) + '</b>' + (film && film.key !== key ? '<div class="small faint">matches ' + a.esc(film.key) + '</div>' : '') + '</td>' +
+            '<td class="small">' + a.esc(r.why) + '</td><td class="small' + (breaks ? ' warn' : '') + '">' + a.esc(known) + (breaks ? ' ⚠️ breaks your policy' : '') + '</td>' +
+            '<td class="small muted">' + a.esc(r.countries) + '</td></tr>';
+        }).join('') + '</tbody></table>' +
+        (bad ? '<p class="small warn">' + bad + ' of these should have been excluded. They still import (the archive keeps everything Arnold surfaced), so reject them in the next step.</p>' : '') +
+        '<div style="margin-top:12px"><button class="btn primary" data-ximport>Import ' + st.preview.length + ' candidates</button> <button class="btn ghost" data-xclearpaste>Start over</button></div>'
+        : '<div class="empty">Couldn\'t find any "Title (YYYY) | ..." lines in that. Check Arnold used the format.</div>') + '</div>';
+    }
+    return '<div class="grid g2">' +
+      '<div class="panel"><h2>⛏️ Build the hunt</h2><div class="form" style="grid-template-columns:150px 1fr">' +
+        '<label>Search type</label>' + sel('search_type', ExcLogic.TYPES) +
+        '<label>Destination</label>' + sel('destination', ExcLogic.DESTINATIONS) +
+        '<label>Wanted</label>' + inp('wanted', '1-50', 'type="number" min="1" max="50"') +
+        '<label>Search style</label>' + sel('style', ExcLogic.STYLES) +
+        '<label>Known-film policy</label>' + sel('known_policy', ExcLogic.POLICIES) +
+        '<label>Slot / year / category</label>' + inp('target', fam === 'Yearly' ? 'e.g. 1987' : 'e.g. Werewolves', 'list="xtargets"') +
+        '<datalist id="xtargets">' + targets.map(function (t) { return '<option value="' + a.esc(t) + '">'; }).join('') + '</datalist>' +
+        '<label>Must include</label>' + inp('must_include') +
+        '<label>Avoid</label>' + inp('avoid') +
+        '<label>Brief</label><textarea class="input" data-xd="brief" style="min-height:70px">' + a.esc(d.brief || '') + '</textarea>' +
+      '</div></div>' +
+      '<div class="panel"><h2>💬 1. Tell Arnold</h2><div class="reqbox">' + a.esc(ExcLogic.requestLine(d)) + '</div>' +
+        '<p class="small muted">The copied message also lists the ' + ex.length + ' film' + (ex.length === 1 ? '' : 's') + ' your policy rules out, ' +
+        'since Arnold can\'t read the app, plus the exact reply format the importer understands.</p>' +
+        '<button class="btn primary" data-xcopy>Copy request for Arnold</button> <button class="btn ghost" data-xcopyline>Copy just the request line</button>' +
+        '<h2 style="margin-top:22px">📥 2. Paste his answer</h2>' +
+        '<textarea class="input" id="xpaste" style="min-height:160px" placeholder="Title (YYYY) | Why it fits | Sources | Evidence | Country">' + a.esc(st.paste) + '</textarea>' +
+        '<div style="margin-top:8px"><button class="btn" data-xparse>Check it</button></div>' +
+      '</div></div>' + preview;
+  }
+
+  // ---------------------------------------------------------------- decide
+  function defaultCollection(M, search) {
+    var fam = ExcLogic.DEST_FAMILY[search.destination];
+    if (!fam) return '';
+    var colls = M.collList.filter(function (c) { return c.family === fam; });
+    var exact = colls.filter(function (c) { return HQ.normalise(c.name) === HQ.normalise(search.target); })[0];
+    return (exact || colls[0] || {}).collection_id || '';
+  }
+
+  function renderDecide(a, M) {
+    var open = openSearches();
+    if (!open.length) return '<div class="panel empty">No open hunts. Build one, send it to Arnold and paste his answer back.</div>';
+    if (!st.search || !open.some(function (s) { return s.search_id === st.search; })) st.search = open[open.length - 1].search_id;
+    var s = open.filter(function (x) { return x.search_id === st.search; })[0];
+    var dec = decisions();
+    var cands = st.data.candidates.filter(function (c) { return c[1] === s.search_id; }).sort(function (x, y) { return x[8] - y[8]; });
+    var pending = cands.filter(function (c) { return !dec[c[0]] || dec[c[0]][2] === '⏳ Pending'; }).length;
+    var collOptions = M.collList.map(function (c) { return [c.collection_id, c.family + ' • ' + c.name]; });
+    var defColl = defaultCollection(M, s);
+    return (open.length > 1 ? '<div class="toolbar"><div class="seg">' + open.map(function (x) {
+        return '<button data-xsearch="' + a.esc(x.search_id) + '" class="' + (x.search_id === s.search_id ? 'on' : '') + '">' + a.esc(x.search_id) + '</button>';
+      }).join('') + '</div></div>' : '') +
+      '<div class="stats" style="grid-template-columns:repeat(4,1fr)">' + [['Active search', s.search_id], ['Run date', a.fmtDate(s.search_date)], ['Candidates', cands.length], ['Pending', pending]].map(function (x) {
+        return '<div class="stat"><span>' + x[0] + '</span><b style="font-size:20px">' + a.esc(x[1]) + '</b></div>';
+      }).join('') + '</div>' +
+      '<div class="panel"><div class="toolbar"><span class="muted small">' + a.esc(ExcLogic.requestLine(s)) + '</span><span class="grow"></span>' +
+        '<button class="btn' + (pending ? ' ghost' : ' primary') + '" data-xclose>' + (pending ? 'Archive with ' + pending + ' pending' : 'Done: archive this hunt') + '</button></div>' +
+      cands.map(function (c) {
+        var f = M.byId[c[2]];
+        var d = dec[c[0]];
+        var cur = d ? d[2] : '⏳ Pending';
+        var o = st.opts[c[0]] || (st.opts[c[0]] = { decision: cur, reason: d ? d[3] : '', coll: defColl, slot: '', rating: '' });
+        var breaks = ExcLogic.breaksPolicy(c[7], s.known_policy);
+        var extra = '';
+        if (o.decision === '✅ Approved') extra = '<select data-xopt="coll" data-cid="' + a.esc(c[0]) + '">' + a.options(collOptions, o.coll, 'Film Library only') + '</select>' +
+          '<input class="input" data-xopt="slot" data-cid="' + a.esc(c[0]) + '" placeholder="Slot (optional)" value="' + a.esc(o.slot) + '" style="width:120px">';
+        if (o.decision === '👁️ Seen / unlisted') extra = '<select data-xopt="rating" data-cid="' + a.esc(c[0]) + '">' + a.options([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], o.rating, 'Rating (optional)') + '</select>';
+        var changed = o.decision !== cur || (d && o.reason !== (d[3] || ''));
+        return '<div class="cand' + (d && cur !== '⏳ Pending' ? ' decided' : '') + '"><div class="row" style="border:0;padding:0">' +
+          '<span class="t"><h3>' + (f ? a.filmLink(f) : a.esc(c[3])) + '</h3></span>' +
+          '<span class="small' + (breaks ? ' warn' : ' muted') + '">Known before: ' + a.esc(c[7] || 'No') + (breaks ? ' ⚠️' : '') + '</span></div>' +
+          '<div class="why">' + a.esc(c[4]) + '</div>' +
+          (c[6] ? '<div class="small muted">' + a.esc(c[6]) + '</div>' : '') +
+          (c[5] ? '<div class="small src">' + linkify(a, c[5]) + '</div>' : '') +
+          '<div class="small faint" style="margin-top:4px">Now: ' + a.esc(ExcLogic.currentState(M, c[2])) + (d ? ' • last decision ' + a.esc(d[2]) + ' → ' + a.esc(d[5]) : '') + '</div>' +
+          '<div class="decide">' + ExcLogic.DECISIONS.slice(1).map(function (x) {
+            return '<button class="btn small' + (o.decision === x ? ' on' : '') + '" data-xdec="' + a.esc(x) + '" data-cid="' + a.esc(c[0]) + '">' + a.esc(x) + '</button>';
+          }).join('') + '</div>' +
+          (o.decision !== '⏳ Pending' ? '<div class="decide">' + extra +
+            '<input class="input" data-xopt="reason" data-cid="' + a.esc(c[0]) + '" placeholder="Reason (optional)" value="' + a.esc(o.reason) + '" style="flex:1;min-width:200px">' +
+            (changed ? '<button class="btn primary" data-xcommit="' + a.esc(c[0]) + '">Commit</button>' : '<span class="small ok">✅ Synced</span>') + '</div>' : '') +
+        '</div>';
+      }).join('') + '</div>';
+  }
+
+  // ---------------------------------------------------------------- archive
+  function renderArchive(a, M) {
+    var dec = decisions();
+    var byId = {};
+    st.data.searches.forEach(function (s) { byId[s.search_id] = s; });
+    var q = HQ.normalise(st.aq);
+    var rows = st.data.candidates.filter(function (c) {
+      var d = dec[c[0]];
+      if (st.asearch && c[1] !== st.asearch) return false;
+      if (st.adec === 'none' ? d : st.adec && (!d || d[2] !== st.adec)) return false;
+      return !q || HQ.normalise(c[3] + ' ' + c[1] + ' ' + (byId[c[1]] ? byId[c[1]].target : '')).indexOf(q) >= 0;
+    }).sort(function (x, y) { return String(y[1]).localeCompare(String(x[1])) || x[8] - y[8]; });
+    var PAGE = 100, pages = Math.max(1, Math.ceil(rows.length / PAGE));
+    st.apage = Math.min(st.apage, pages - 1);
+    var counts = {};
+    Object.keys(dec).forEach(function (k) { counts[dec[k][2]] = (counts[dec[k][2]] || 0) + 1; });
+    return '<div class="stats" style="grid-template-columns:repeat(6,1fr)">' + [['Searches', st.data.searches.length], ['Surfaced', st.data.candidates.length],
+        ['✅ Approved', counts['✅ Approved'] || 0], ['👁️ Seen', counts['👁️ Seen / unlisted'] || 0], ['🚫 Rejected', counts['🚫 Rejected'] || 0], ['👀 Maybe', counts['👀 Maybe'] || 0]].map(function (x) {
+        return '<div class="stat"><span>' + x[0] + '</span><b>' + x[1] + '</b></div>';
+      }).join('') + '</div>' +
+      '<div class="panel"><div class="toolbar"><input class="input" id="xaq" placeholder="Film, search ID or target" value="' + a.esc(st.aq) + '" style="width:260px">' +
+        '<select data-xa="adec">' + a.options([['none', 'No decision yet']].concat(ExcLogic.DECISIONS.map(function (x) { return [x, x]; })), st.adec, 'Any decision') + '</select>' +
+        '<select data-xa="asearch">' + a.options(st.data.searches.slice().reverse().map(function (s) { return [s.search_id, s.search_id + ' • ' + (s.target || s.search_type)]; }), st.asearch, 'Any search') + '</select>' +
+        '<span class="grow"></span><span class="muted small">' + rows.length + ' rows. Append-only: history is never rewritten.</span></div>' +
+      (rows.length ? '<table><thead><tr><th>Search</th><th>Hunt / target</th><th>Film</th><th>Known before?</th><th>Decision</th><th>Reason</th><th>Destination / result</th><th>Current state</th></tr></thead><tbody>' +
+        rows.slice(st.apage * PAGE, st.apage * PAGE + PAGE).map(function (c) {
+          var s = byId[c[1]] || {}, d = dec[c[0]], f = M.byId[c[2]];
+          return '<tr><td class="small">' + a.esc(c[1]) + '<div class="faint">' + a.esc(a.fmtDate(s.search_date)) + '</div></td>' +
+            '<td class="small">' + a.esc(s.search_type) + '<div class="faint">' + a.esc(s.target) + '</div></td>' +
+            '<td>' + (f ? a.filmLink(f) : a.esc(c[3])) + '</td><td class="small">' + a.esc(c[7]) + '</td>' +
+            '<td class="small">' + (d ? a.esc(d[2]) + '<div class="faint">' + a.esc(a.fmtDate(d[4])) + '</div>' : '<span class="faint">—</span>') + '</td>' +
+            '<td class="small muted">' + a.esc(d ? d[3] : '') + '</td><td class="small muted">' + a.esc(d ? d[5] : '') + '</td>' +
+            '<td class="small faint">' + a.esc(ExcLogic.currentState(M, c[2])) + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">Nothing matches.</div>') +
+      (pages > 1 ? '<div class="pager">Page ' + (st.apage + 1) + ' of ' + pages + ' <button class="btn" data-xapage="-1"' + (st.apage ? '' : ' disabled') + '>←</button>' +
+        '<button class="btn" data-xapage="1"' + (st.apage < pages - 1 ? '' : ' disabled') + '>→</button></div>' : '') + '</div>';
+  }
+
+  function render(a) {
+    var M = a.model();
+    var head = a.topBar('Horror Excavator', 'Arnold digs, you judge, the archive never forgets. 🔎');
+    if (st.error) return head + '<div class="panel empty">Couldn\'t open the archive: ' + a.esc(st.error) + '</div>';
+    if (!st.data) { load(a); return head + '<div class="loading">Dusting off the archive…</div>'; }
+    var pend = pendingCount();
+    var body = st.tab === 'decide' ? renderDecide(a, M) : st.tab === 'archive' ? renderArchive(a, M) : renderHunt(a, M);
+    return head + '<div class="toolbar"><div class="seg">' + TABS.map(function (t) {
+      return '<button data-xtab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'decide' && pend ? ' <span class="badge" style="background:var(--blood2);border-radius:99px;padding:0 6px;font-size:11px">' + pend + '</span>' : '') + '</button>';
+    }).join('') + '</div></div>' + body;
+  }
+
+  // ---------------------------------------------------------------- events
+  var draftTimer = null;
+  function saveDraftSoon(a) {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(function () { a.call('apiSaveExcavatorDraft', st.draft).catch(function () {}); }, 800);
+  }
+
+  function commit(a, M, cid) {
+    var o = st.opts[cid];
+    var opts = o.decision === '✅ Approved' ? { collection_id: o.coll, slot: o.slot } : o.decision === '👁️ Seen / unlisted' ? { rating: o.rating } : {};
+    a.call('apiDecideCandidate', cid, o.decision, o.reason, opts).then(function (res) {
+      var d = res.decision;
+      st.data.decisions.push([d.decision_id, d.candidate_id, d.decision, d.reason, d.decision_date, d.destination_result, d.created_at]);
+      var cand = st.data.candidates.filter(function (c) { return c[0] === cid; })[0];
+      var f = M.byId[cand[2]];
+      if (res.memory && f) f.memory = [res.memory.discovery_status, res.memory.exclusion_reason, res.memory.origin, res.memory.memory_notes, res.memory.research_source, res.memory.date_added];
+      if (res.state && f) { f.status = res.state.viewing_status; f.rating = res.state.rating_10; f.version = res.state.version; f.modified = res.state.modified_at; }
+      if (res.entry) { var e = res.entry; HQ.addEntry(M, { id: e.entry_id, coll: e.collection_id, film: e.film_id, slot: e.slot_label, seq: e.sequence, sourceNote: e.source_note, contextNote: '' }); HQ.sortEntries(M); }
+      a.render();
+      a.toast(d.decision + ' • ' + (f ? f.title : '') + ' • ' + d.destination_result, 'ok');
+    }).catch(function (e) { a.toast('Not committed: ' + e.message, 'bad'); });
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-xtab],[data-xcopy],[data-xcopyline],[data-xparse],[data-ximport],[data-xclearpaste],[data-xsearch],[data-xdec],[data-xcommit],[data-xclose],[data-xapage]');
+    if (!t) return false;
+    var d = t.dataset, M = a.model();
+    if (d.xtab) { st.tab = d.xtab; a.render(); return true; }
+    if (d.xcopy !== undefined) { copyText(a, ExcLogic.arnoldPrompt(M, st.data, st.draft), 'Request'); return true; }
+    if (d.xcopyline !== undefined) { copyText(a, 'RUN EXCAVATOR\n' + ExcLogic.requestLine(st.draft), 'Request line'); return true; }
+    if (d.xparse !== undefined) { st.paste = a.$('#xpaste').value; st.preview = ExcLogic.parseArnold(st.paste); a.render(); return true; }
+    if (d.xclearpaste !== undefined) { st.paste = ''; st.preview = null; a.render(); return true; }
+    if (d.ximport !== undefined) {
+      t.disabled = true;
+      a.call('apiImportCandidates', st.draft, st.preview).then(function (res) {
+        st.data.searches.push(res.search);
+        res.candidates.forEach(function (c) { st.data.candidates.push([c.candidate_id, c.search_id, c.film_id, c.surfaced_title, c.why_it_fits, c.sources, c.evidence_note, c.known_before, c.original_order, c.archive_notes]); });
+        res.countries.forEach(function (c) { M.raw.countries[c.country_id] = c.name; });
+        res.films.forEach(function (f, i) {
+          var mem = res.memory[i];
+          var cs = res.filmCountries.filter(function (fc) { return fc.film_id === f.film_id; }).map(function (fc) { return M.raw.countries[fc.country_id]; });
+          var film = { id: f.film_id, key: f.display_key, title: f.title, year: f.release_year, poster: '', status: 'Not watched', rating: null, reaction: '', version: 1,
+            modified: f.created_at, countries: cs, memory: [mem.discovery_status, mem.exclusion_reason, mem.origin, mem.memory_notes, mem.research_source, mem.date_added],
+            special: null, aliases: [] };
+          film.search = HQ.normalise(film.key) + ' ' + film.id.toLowerCase();
+          M.films.push(film); M.byId[film.id] = film;
+        });
+        st.paste = ''; st.preview = null; st.search = res.search.search_id; st.tab = 'decide';
+        a.render();
+        a.toast('Imported ' + res.candidates.length + ' candidates as ' + res.search.search_id, 'ok');
+      }).catch(function (e) { t.disabled = false; a.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.xsearch) { st.search = d.xsearch; a.render(); return true; }
+    if (d.xdec) { st.opts[d.cid].decision = d.xdec; a.render(); return true; }
+    if (d.xcommit) { commit(a, M, d.xcommit); return true; }
+    if (d.xclose !== undefined) {
+      a.call('apiSetSearchState', st.search, 'Archived').then(function () {
+        st.data.searches.forEach(function (s) { if (s.search_id === st.search) s.state = 'Archived'; });
+        a.render(); a.toast('Hunt archived. Every candidate stays in the Discovery Archive.', 'ok');
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.xapage) { st.apage += Number(d.xapage); a.render(); return true; }
+    return false;
+  }
+
+  function onInput(ev, a) {
+    var t = ev.target;
+    if (t.dataset.xd) { st.draft[t.dataset.xd] = t.value; saveDraftSoon(a); var box = document.querySelector('.reqbox'); if (box) box.textContent = ExcLogic.requestLine(st.draft); return true; }
+    if (t.dataset.xopt) { st.opts[t.dataset.cid][t.dataset.xopt] = t.value; return true; }
+    if (t.id === 'xpaste') { st.paste = t.value; return true; }
+    if (t.id === 'xaq') {
+      st.aq = t.value; st.apage = 0;
+      var pos = t.selectionStart; a.render(); var again = a.$('#xaq'); again.focus(); again.setSelectionRange(pos, pos);
+      return true;
+    }
+    return false;
+  }
+
+  function onChange(ev, a) {
+    var t = ev.target;
+    if (t.dataset.xd) { st.draft[t.dataset.xd] = t.value; saveDraftSoon(a); a.render(); return true; }
+    if (t.dataset.xopt) { st.opts[t.dataset.cid][t.dataset.xopt] = t.value; a.render(); return true; }
+    if (t.dataset.xa) { st[t.dataset.xa] = t.value; st.apage = 0; a.render(); return true; }
+    return false;
+  }
+
+  App.view('excavator', { render: render, onClick: onClick, onInput: onInput, onChange: onChange });
+})();
+</script>

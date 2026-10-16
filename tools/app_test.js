@@ -17,6 +17,7 @@ const LEGACY_ID = '1K4jvoXbBLMT13XXTlUDAgbo3U_VD-wXZtI-IMCQunQw';
 const DB_ID = '1h1sgPL6_5b1womrFQoqF-Gob7rlsFYZyFozaTJyR4Zc';
 
 const g = makeGlobals({ [LEGACY_ID]: new MockSpreadsheet(tabs), [DB_ID]: new MockSpreadsheet({ Sheet1: [] }) });
+g.Utilities = { formatDate: (d) => d.toISOString().slice(0, 10) };
 g.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
 const ctx = vm.createContext(Object.assign({ console }, g));
 for (const f of fs.readdirSync(SRC).filter(f => f.endsWith('.gs')).sort()) {
@@ -207,5 +208,66 @@ assert.strictEqual(board.coveredCriteria, 1, 'one film covers the sequel criteri
 assert.strictEqual(Math.round(board.completion * 100), 67, '(1 + 1) / (2 + 1) like the old sheet formula');
 assert.strictEqual(board.assignments, 2);
 assert.strictEqual(run(`apiDeleteCriterion(${JSON.stringify(cr1.criterion_id)})`).assignments, 1);
+
+// Horror Excavator.
+const excSrc = fs.readFileSync(path.join(SRC, 'ViewExcavator.html'), 'utf8');
+const excMod = { exports: {} };
+new Function('module', 'HQ', excSrc.match(/<script>([\s\S]*?)<\/script>/)[1])(excMod, HQ);
+const EX = excMod.exports;
+const draft = { search_type: 'Bestiary Top-Up', destination: 'Horror Bestiary 👹', wanted: 15, style: 'Deep excavation',
+  known_policy: 'Fresh only • exclude every known/surfaced film', target: 'Mutants, Experiments & Monstrous Transformations',
+  must_include: 'Mutation', avoid: 'Weak technical fits', brief: 'Second MEMT pass.' };
+assert.strictEqual(EX.requestLine(draft), 'TYPE: Bestiary Top-Up • DESTINATION: Horror Bestiary 👹 • WANT: 15 • STYLE: Deep excavation • KNOWN POLICY: Fresh only • exclude every known/surfaced film • SLOT/YEAR/CATEGORY: Mutants, Experiments & Monstrous Transformations • MUST INCLUDE: Mutation • AVOID: Weak technical fits • BRIEF: Second MEMT pass.', 'matches the old B7 formula');
+assert.strictEqual(EX.requestLine({ search_type: 'Freeform', wanted: '', brief: 'x' }), 'TYPE: Freeform • BRIEF: x', 'blank controls skipped like TEXTJOIN');
+const parsed = EX.parseArnold([
+  'Here you go:',
+  '| Film | Why it fits | Sources | Evidence | Country |',
+  '|---|---|---|---|---|',
+  '| **The Fly (1986)** | Brundlefly | https://en.wikipedia.org/wiki/The_Fly_(1986_film) | Classic | United States, Canada |',
+  '1. Splice (2009) | Genetic experiment gone wrong | IMDb | Mixed | Canada',
+  '- Society | 1989 | Body melt party | Letterboxd',
+  'Title (YYYY) | Why it fits | Research source(s) | Community / evidence note | Country',
+  'Not a candidate line'
+].join('\n'));
+assert.deepStrictEqual(parsed.map(r => r.title + ' (' + r.year + ')'), ['The Fly (1986)', 'Splice (2009)', 'Society (1989)']);
+assert.strictEqual(parsed[0].countries, 'United States, Canada');
+assert.strictEqual(parsed[2].why, 'Body melt party', 'Title | Year | ... rows handled');
+assert.strictEqual(EX.breaksPolicy('Yes • maybe', 'Fresh only • exclude every known film'), true);
+assert.strictEqual(EX.breaksPolicy('Yes • maybe', 'Exclude seen + rejected • allow old maybes/candidates'), false);
+assert.strictEqual(EX.breaksPolicy('Yes • seen', 'Only exclude seen • broadest practical search'), true);
+assert.strictEqual(EX.breaksPolicy('Yes • tracked', 'Research regardless • show known matches'), false);
+const xd0 = run('apiExcavatorData()');
+const M5 = HQ.build(run('apiBootstrap()'));
+assert.ok(EX.exclusions(M5, xd0, 'Fresh only • exclude every known/surfaced film').includes('Night Tide (1961)'));
+assert.ok(!EX.exclusions(M5, xd0, 'Only exclude seen • broadest practical search').includes('Night Tide (1961)'), 'maybes allowed under seen-only');
+assert.ok(EX.exclusions(M5, xd0, 'Only exclude seen • broadest practical search').includes('Bite (2015)'), 'seen/unlisted excluded');
+assert.strictEqual(EX.exclusions(M5, xd0, 'Research regardless • show known matches').length, 0);
+assert.ok(EX.arnoldPrompt(M5, xd0, draft).indexOf('Title (YYYY) | Why it fits') > 0);
+const imp = run(`apiImportCandidates(${JSON.stringify(draft)}, ${JSON.stringify(parsed.concat([{ title: 'Night Tide', year: 1961, why: 'again' }, { title: 'The Fly', year: 1986, why: 'dupe' }]))})`);
+assert.ok(/^EXC-\d{8}-007$/.test(imp.search.search_id), 'search ids continue the old sequence: ' + imp.search.search_id);
+assert.strictEqual(imp.candidates.length, 4, 'same film twice in one run is kept once');
+assert.strictEqual(imp.films.length, 3, 'three brand-new films');
+assert.strictEqual(imp.memory[0].discovery_status, '🔎 Candidate');
+assert.strictEqual(imp.candidates.find(c => c.surfaced_title === 'Night Tide (1961)').known_before, 'Yes • maybe');
+assert.strictEqual(imp.filmCountries.filter(fc => fc.film_id === imp.films[0].film_id).length, 2, 'countries seeded');
+const fly = imp.candidates.find(c => c.surfaced_title === 'The Fly (1986)');
+const splice = imp.candidates.find(c => c.surfaced_title === 'Splice (2009)');
+const soc = imp.candidates.find(c => c.surfaced_title === 'Society (1989)');
+const memt = run(`dbRead('Collections')`).find(c => c.name === 'Mutants, Experiments & Monstrous Transformations');
+let dres = run(`apiDecideCandidate(${JSON.stringify(fly.candidate_id)}, '✅ Approved', 'Perfect fit', { collection_id: ${JSON.stringify(memt.collection_id)} })`);
+assert.ok(dres.entry && dres.entry.collection_id === memt.collection_id, 'approved goes onto the list');
+assert.strictEqual(dres.memory.discovery_status, '✅ Approved');
+assert.ok(/Added to Bestiary/.test(dres.decision.destination_result));
+dres = run(`apiDecideCandidate(${JSON.stringify(splice.candidate_id)}, '👁️ Seen / unlisted', '', { rating: 6 })`);
+assert.strictEqual(dres.state.viewing_status, 'Watched');
+assert.strictEqual(dres.state.rating_10, 6);
+assert.ok(!run(`dbRead('CollectionEntries')`).some(e => e.film_id === splice.film_id), 'seen/unlisted never forced onto a list');
+dres = run(`apiDecideCandidate(${JSON.stringify(soc.candidate_id)}, '🚫 Rejected', 'Too goopy', {})`);
+assert.strictEqual(dres.memory.exclusion_reason, 'Too goopy');
+const xd1 = run('apiExcavatorData()');
+assert.strictEqual(xd1.candidates.length, xd0.candidates.length + 4, 'archive is append-only');
+assert.strictEqual(Object.keys(EX.latestDecisions(xd1)).length, Object.keys(EX.latestDecisions(xd0)).length + 3);
+run(`apiSetSearchState(${JSON.stringify(imp.search.search_id)}, 'Archived')`);
+assert.strictEqual(run('apiExcavatorData()').searches.find(s => s.search_id === imp.search.search_id).state, 'Archived');
 
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

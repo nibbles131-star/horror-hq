@@ -33,10 +33,15 @@ So the script gets its own (free) Cloud project:
 
 1. Open <https://console.cloud.google.com/projectcreate>, name it **Horror HQ**, click **Create**, and make sure it's
    the selected project at the top.
-2. Open <https://console.cloud.google.com/apis/library/script.googleapis.com> and click **Enable**.
+2. Enable three APIs (open each link with the Horror HQ project selected and click **Enable**):
+   <https://console.cloud.google.com/apis/library/script.googleapis.com>,
+   <https://console.cloud.google.com/apis/library/drive.googleapis.com> and
+   <https://console.cloud.google.com/apis/library/sheets.googleapis.com>.
+   (Without Drive, the installer stops with "Permission denied while enabling APIs: drive".)
 3. Open <https://console.cloud.google.com/auth/overview> and click **Get started**: app name **Horror HQ**, your email
    as support and contact email, audience **External**, agree, **Create**.
-4. Go to **Audience** and click **Publish app** ▸ **Confirm**. Skip verification; it's only you. (Left in "Testing",
+4. Go to **Audience**, add your Gmail under **Test users**, then click **Publish app** ▸ **Confirm** (fill in **Branding** and
+   click Save first if it's greyed out; it may only light up after the first run in step 5). Skip verification; it's only you. (Left in "Testing",
    Google signs the script out every 7 days and the auto-updates stop.)
 5. Open <https://console.cloud.google.com/home/dashboard> and copy the **Project number** (digits, not the ID).
 6. In the script editor: **⚙️ Project Settings** ▸ **Google Cloud Platform (GCP) Project** ▸ **Change project**,

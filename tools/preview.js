@@ -24,11 +24,14 @@ for (const f of fs.readdirSync(SRC).filter(f => f.endsWith('.gs')).sort()) {
   vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
 }
 vm.runInContext('runMigration()', ctx);
+g.Utilities = { formatDate: (d) => d.toISOString().slice(0, 10) };
 const raw = JSON.parse(JSON.stringify(vm.runInContext('apiBootstrap()', ctx)));
+const exc = JSON.parse(JSON.stringify(vm.runInContext('apiExcavatorData()', ctx)));
 
 // Fake server: every call replays through the real Apps Script code via a tiny RPC table baked into the page.
 const fake = `<script>
 var RAW = ${JSON.stringify(raw)};
+var EXC = ${JSON.stringify(exc)};
 var google = { script: { get run() {
   var ok = function () {}, bad = function () {};
   var p = new Proxy({}, { get: function (_, name) {
@@ -38,6 +41,7 @@ var google = { script: { get run() {
       var args = arguments;
       setTimeout(function () {
         if (name === 'apiBootstrap') return ok(RAW);
+        if (name === 'apiExcavatorData') return ok(EXC);
         if (name === 'apiSaveFilmState') return ok({ conflict: false, state: Object.assign({ film_id: args[0], version: (args[2] || 1) + 1, modified_at: new Date().toISOString() }, args[1]) });
         ok({});
       }, 30);

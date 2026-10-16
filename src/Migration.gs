@@ -414,6 +414,7 @@ function runMigration() {
   var activeId = String(src.excavatorStatus[0]).trim();
   if (activeId && searches[activeId]) {
     var s = searches[activeId];
+    s.state = 'Open'; // the old inbox stays the app's inbox until Tommy archives it
     if (s.target === draft.target) {
       s.destination = draft.destination; s.wanted = draft.wanted; s.style = draft.style; s.known_policy = draft.known_policy;
       s.must_include = draft.must_include; s.avoid = draft.avoid;
