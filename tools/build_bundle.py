@@ -5,6 +5,7 @@ Usage: python3 tools/build_bundle.py  ->  dist/release/<source files> + dist/rel
 
 Upload the changed source files to the Drive folder "Horror HQ Code", then release.json last.
 """
+import hashlib
 import json
 import pathlib
 import shutil
@@ -33,7 +34,8 @@ def main():
     OUT.mkdir(parents=True)
     for n in names:
         shutil.copy(SRC / n, OUT / n)
-    release = {"version": f"{stamp}-{sha}", "files": names}
+    digests = {n: hashlib.sha256((SRC / n).read_bytes()).hexdigest() for n in names}
+    release = {"version": f"{stamp}-{sha}", "files": names, "sha256": digests}
     (OUT / "release.json").write_text(json.dumps(release, indent=2), encoding="utf-8")
     print(json.dumps(release, indent=2))
 

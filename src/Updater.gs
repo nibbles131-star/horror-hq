@@ -47,6 +47,11 @@ function newestFileIn_(folder, name) {
   return newest;
 }
 
+function sha256Hex_(text) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
+
 /** Reads release.json and every file it lists. Throws rather than installing a partial release. */
 function readRelease_() {
   var folders = DriveApp.getFoldersByName(UPDATER_FOLDER_NAME);
@@ -60,7 +65,12 @@ function readRelease_() {
     if (!f) throw new Error('Release ' + release.version + ' lists ' + name + ' but it is not in the folder.');
     var ext = name.split('.').pop();
     if (!UPDATER_TYPES[ext]) throw new Error('Unknown file type: ' + name);
-    return { name: name.replace(/\.[^.]+$/, ''), type: UPDATER_TYPES[ext], source: f.getBlob().getDataAsString() };
+    var source = f.getBlob().getDataAsString('UTF-8');
+    var expected = (release.sha256 || {})[name];
+    if (expected && sha256Hex_(source) !== expected) {
+      throw new Error(name + ' does not match its checksum in release ' + release.version + '; not installing.');
+    }
+    return { name: name.replace(/\.[^.]+$/, ''), type: UPDATER_TYPES[ext], source: source };
   });
   if (!files.some(function (f) { return f.name === 'appsscript' && f.type === 'JSON'; })) {
     throw new Error('Release has no appsscript.json; refusing to install.');
