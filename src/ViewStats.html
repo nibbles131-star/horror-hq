@@ -1,0 +1,519 @@
+<script>
+/* Pure Stats + Trophies logic, shared with the Node tests (tools/app_test.js). Same rules as the old tabs. */
+var StatsLogic = (function () {
+  var MEDALS = { Bronze: '🥉', Silver: '🥈', Gold: '🥇', Platinum: '💎' };
+
+  function isRated(f) { return f.rating !== null && f.rating !== undefined && f.rating !== ''; }
+  function avgOf(films) {
+    return films.length ? films.reduce(function (s, f) { return s + Number(f.rating); }, 0) / films.length : null;
+  }
+  function round1(x) { return x === null ? null : Math.round(x * 10) / 10; }
+
+  /** Unique films on one list, in list order. */
+  function filmsIn(M, cid) {
+    var seen = {}, out = [];
+    (M.entriesByColl[cid] || []).forEach(function (e) {
+      var f = M.byId[e.film];
+      if (f && !seen[f.id]) { seen[f.id] = true; out.push(f); }
+    });
+    return out;
+  }
+
+  /** Taste DNA: one row per list. Love rate = 9+ share of rated, pain rate = 1-4 share of rated. */
+  function dna(M, family) {
+    var rows = M.collList.filter(function (c) { return !family || c.family === family; }).map(function (c) {
+      var films = filmsIn(M, c.collection_id);
+      var rated = films.filter(isRated);
+      var avg = avgOf(rated);
+      return { coll: c, tracked: films.length, watched: films.filter(function (f) { return f.status === 'Watched'; }).length,
+        rated: rated.length, ratedFilms: rated, avg: avg, verdict: avg === null ? null : HQ.verdict(avg),
+        love: rated.length ? rated.filter(function (f) { return f.rating >= 9; }).length / rated.length : null,
+        pain: rated.length ? rated.filter(function (f) { return f.rating <= 4; }).length / rated.length : null };
+    }).filter(function (r) { return r.tracked > 0; });
+    var all = M.films.filter(isRated);
+    var best = rows.filter(function (r) { return r.rated >= 2; })
+      .sort(function (a, b) { return b.avg - a.avg || b.rated - a.rated; })[0] || null;
+    return { rows: rows, ratedFilms: all.length, overallAvg: avgOf(all), best: best,
+      status: all.length < 25 ? 'EARLY DNA 🧪' : 'STABLE DNA 🧬' };
+  }
+
+  /** One film, one vote across the whole library, listed or not. */
+  function distribution(M) {
+    var rated = M.films.filter(isRated);
+    var tiers = HQ.VERDICTS.map(function (v) {
+      return { v: v, films: rated.filter(function (f) { return HQ.verdict(f.rating).key === v.key; }) };
+    });
+    var scores = [];
+    for (var i = 1; i <= 10; i++) scores.push({ score: i, films: rated.filter(function (f) { return Number(f.rating) === i; }) });
+    var top = tiers.filter(function (t) { return t.films.length; }).sort(function (a, b) { return b.films.length - a.films.length; })[0];
+    var cunt = [1, 2, 3, 4, 5].map(function (n) {
+      return { score: n, films: M.films.filter(function (f) { return f.special && Number(f.special[0]) === n; }) };
+    });
+    return { tiers: tiers, scores: scores, total: rated.length, avg: avgOf(rated), mostCommon: top ? top.v : null,
+      obsession: tiers[0].films.length, cunt: cunt };
+  }
+
+  /** DNFs bury themselves. Manual burials are separate records and never change a film's status. */
+  function graveyard(M) {
+    var auto = M.films.filter(function (f) { return f.status === 'DNF'; }).map(function (f) {
+      return { film: f, context: HQ.listNames(M, f).join(', '), cause: f.reaction || '' };
+    }).sort(function (a, b) { return a.film.key.localeCompare(b.film.key); });
+    var manual = (M.raw.burials || []).map(function (b) { return { rec: b, film: b.film_id ? M.byId[b.film_id] : null }; })
+      .sort(function (a, b) { return String(b.rec.interred_date || '').localeCompare(String(a.rec.interred_date || '')) || String(a.rec.raw_film).localeCompare(String(b.rec.raw_film)); });
+    return { auto: auto, manual: manual };
+  }
+
+  /** Watched films only, unlisted ones included. Co-productions count for every country. */
+  function passport(M) {
+    var films = M.films.filter(function (f) { return f.status === 'Watched'; })
+      .sort(function (a, b) { return (a.year || 9999) - (b.year || 9999) || a.key.localeCompare(b.key); });
+    var c = {}, d = {};
+    films.forEach(function (f) {
+      f.countries.forEach(function (n) { (c[n] = c[n] || []).push(f); });
+      if (f.year) { var k = HQ.decadeOf(Number(f.year)); (d[k] = d[k] || []).push(f); }
+    });
+    return { films: films,
+      countries: Object.keys(c).map(function (k) { return { name: k, films: c[k] }; })
+        .sort(function (a, b) { return b.films.length - a.films.length || a.name.localeCompare(b.name); }),
+      decades: Object.keys(d).sort().map(function (k) { return { name: k, films: d[k] }; }),
+      noCountry: films.filter(function (f) { return !f.countries.length; }) };
+  }
+
+  function franchiseBoard(M) {
+    var rows = HQ.franchises(M);
+    var watched = rows.reduce(function (s, r) { return s + r.watched; }, 0);
+    var total = rows.reduce(function (s, r) { return s + r.total; }, 0);
+    return { rows: rows, watched: watched, total: total, pct: total ? watched / total : 0 };
+  }
+
+  /** The trophy cabinet plus the old tab's header numbers (each tier counts once). */
+  function cabinet(M) {
+    var t = HQ.trophies(M);
+    var byTier = { Bronze: 0, Silver: 0, Gold: 0, Platinum: 0 }, total = 0;
+    t.core.forEach(function (c) {
+      c.ladder.forEach(function (d) { total++; if (c.value >= d.threshold) byTier[d.tier]++; });
+    });
+    t.bestiary.forEach(function (b) {
+      t.bestiaryLadder.forEach(function (d) { total++; if (b.watched >= d.threshold) byTier[d.tier]++; });
+      var gold = t.bestiaryLadder[t.bestiaryLadder.length - 1];
+      b.goldNote = !gold || b.listed >= gold.threshold ? '✅ Gold possible' : '➕ Add ' + (gold.threshold - b.listed) + ' more';
+    });
+    if (t.platinum.def) { total++; if (t.platinum.earned) byTier.Platinum++; }
+    var unlocked = byTier.Bronze + byTier.Silver + byTier.Gold + byTier.Platinum;
+    t.summary = { unlocked: unlocked, total: total, pct: total ? unlocked / total : 0, byTier: byTier };
+    return t;
+  }
+
+  function awards(M) {
+    return (M.raw.awards || []).slice().sort(function (a, b) { return a.sort_order - b.sort_order; }).map(function (w) {
+      return { rec: w, film: w.winner_film_id ? M.byId[w.winner_film_id] : null };
+    });
+  }
+
+  return { MEDALS: MEDALS, round1: round1, filmsIn: filmsIn, dna: dna, distribution: distribution, graveyard: graveyard,
+    passport: passport, franchiseBoard: franchiseBoard, cabinet: cabinet, awards: awards };
+})();
+if (typeof module !== 'undefined') module.exports = StatsLogic;
+</script>
+<style>
+  .trophies { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .trophy h2 { margin-bottom: 4px; }
+  .tiers { display: flex; gap: 6px; margin: 12px 0 10px; }
+  .tier { flex: 1; border: 1px solid var(--line2); border-radius: 8px; padding: 7px 8px; font-size: 12px; color: var(--faint); text-align: center; }
+  .tier b { display: block; font-size: 13px; color: var(--muted); }
+  .tier.on { color: var(--text, #eee); }
+  .tier.on.Bronze { border-color: #8a5a2b; background: #2a1d12; } .tier.on.Silver { border-color: #8d9298; background: #22252a; }
+  .tier.on.Gold { border-color: #c9a227; background: #2e2610; } .tier.on b { color: inherit; }
+  .plat { display: flex; gap: 22px; align-items: center; }
+  .plat .gem { font-size: 46px; filter: grayscale(1) opacity(.45); } .plat .gem.on { filter: none; }
+  .hbars .row { cursor: pointer; } .hbars .row:hover { background: #241e22; }
+  .vbars { display: flex; gap: 8px; align-items: flex-end; height: 160px; padding-top: 10px; }
+  .vbars div { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; cursor: pointer; font-size: 12px; color: var(--muted); }
+  .vbars i { display: block; width: 100%; background: var(--blood2); border-radius: 4px 4px 0 0; min-height: 2px; margin: 4px 0; }
+  .vbars div:hover i { background: var(--blood); }
+  .stones { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .stone { background: linear-gradient(180deg, #2c2a2e, #19171a); border: 1px solid #3a363c; border-radius: 90px 90px 6px 6px; padding: 30px 16px 16px; text-align: center; box-shadow: inset 0 -8px 0 #120f11; }
+  .stone .rip { font-size: 11px; letter-spacing: 3px; color: var(--faint); }
+  .stone .who { font-weight: 800; margin: 8px 0 6px; font-size: 15px; }
+  .stone .cause { font-style: italic; color: var(--muted); font-size: 12px; min-height: 16px; }
+  .stone .when { font-size: 11px; color: var(--faint); margin-top: 8px; }
+  .stone .btn { margin-top: 10px; font-size: 12px; padding: 4px 10px; }
+  .drill { border-color: var(--blood2); }
+  td.num, th.num { text-align: right; }
+  .statsv > .panel, .statsv > .grid, .statsv > .trophies { margin-bottom: 16px; }
+  .statsv .stat b.txt { font-size: 17px; line-height: 1.3; margin-top: 4px; }
+  .statsv td.small, .statsv th { white-space: nowrap; }
+</style>
+<script>
+/* Stats + Trophies: the trophy cabinet, Taste DNA, ratings, passport, franchises, the Graveyard and the Horror Awards. */
+(function () {
+  var TABS = [['trophies', '🏆 Trophies'], ['dna', '🧬 Taste DNA'], ['ratings', '📊 Ratings'], ['passport', '🌍 Passport'],
+    ['franchises', '🔪 Franchises'], ['graveyard', '🪦 Graveyard'], ['awards', '🎖️ Awards']];
+  var st = { tab: 'trophies', drill: null, dnaFam: '', dnaAll: false, pfilter: null, form: null, pickQ: '' };
+
+  function stat(a, label, value) {
+    var long = String(value).length > 8;
+    return '<div class="stat"><span>' + a.esc(label) + '</span><b' + (long ? ' class="txt"' : '') + '>' + a.esc(value) + '</b></div>';
+  }
+  function stats(a, list) { return '<div class="stats" style="grid-template-columns:repeat(' + Math.max(list.length, 4) + ',1fr)">' + list.map(function (s) { return stat(a, s[0], s[1]); }).join('') + '</div>'; }
+  function avgText(x) { return x === null ? '—' : StatsLogic.round1(x) + '/10'; }
+  function pctText(a, x) { return x === null ? '—' : a.pct(x); }
+
+  /** Drill-through: the actual films behind a number. */
+  function drill(title, films) { st.drill = { title: title, ids: films.map(function (f) { return f.id; }) }; }
+  function renderDrill(a, M) {
+    if (!st.drill) return '';
+    var films = st.drill.ids.map(function (id) { return M.byId[id]; }).filter(Boolean);
+    return '<div class="panel drill" style="margin-bottom:16px"><h2>' + a.esc(st.drill.title) + ' <span class="act"><span class="muted small">' +
+      films.length + ' film' + (films.length === 1 ? '' : 's') + '</span> <button class="btn ghost" data-sdrillx>Close</button></span></h2>' +
+      (films.length ? '<table><thead><tr><th>Film</th><th>Status</th><th>Rating</th><th>Lists</th></tr></thead><tbody>' + films.map(function (f) {
+        return '<tr><td>' + a.filmLink(f) + '</td><td>' + a.statusChip(f.status) + '</td><td>' + a.ratingCell(f) + '</td><td class="small muted">' +
+          a.esc(HQ.listNames(M, f).join(', ')) + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<div class="empty">Nobody here.</div>') + '</div>';
+  }
+
+  // ---------------------------------------------------------------- trophies
+  function tierBox(a, d, value) {
+    var on = value >= d.threshold;
+    return '<div class="tier ' + a.esc(d.tier) + (on ? ' on' : '') + '" title="' + (on ? 'Unlocked' : 'Locked') + '"><b>' + (StatsLogic.MEDALS[d.tier] || '') + ' ' + a.esc(d.name) + '</b>' +
+      (on ? '🏆 ' : '🔒 ') + d.threshold + '</div>';
+  }
+  function progress(a, value, next) {
+    if (!next) return '<div class="small" style="color:#c9a227">Ladder complete. Seek help. 🥇</div>';
+    return '<div class="bar"><i style="width:' + Math.min(100, value / next.threshold * 100) + '%"></i></div>' +
+      '<div class="small muted" style="margin-top:6px">Next: ' + a.esc(next.name) + ' at ' + next.threshold + ' (' + (next.threshold - value) + ' to go)</div>';
+  }
+
+  function renderTrophies(a, M) {
+    var t = StatsLogic.cabinet(M), s = t.summary, p = t.platinum;
+    var core = t.core.map(function (c) {
+      return '<div class="panel trophy"><h2>' + a.esc(c.family) + '<span class="act muted small">' + a.esc(c.metric) + '</span></h2>' +
+        '<div style="font-size:28px;font-weight:800">' + c.value + '</div>' +
+        '<div class="tiers">' + c.ladder.map(function (d) { return tierBox(a, d, c.value); }).join('') + '</div>' + progress(a, c.value, c.next) + '</div>';
+    }).join('');
+    var lad = t.bestiaryLadder;
+    var beasts = '<table><thead><tr><th>Category</th><th class="num">Watched</th><th class="num">Listed</th>' + lad.map(function (d) {
+        return '<th>' + StatsLogic.MEDALS[d.tier] + ' ' + a.esc(d.tier) + ' • ' + d.threshold + '</th>';
+      }).join('') + '<th>Current tier</th><th>Progress</th><th>Gold</th></tr></thead><tbody>' + t.bestiary.map(function (b) {
+        var cur = b.earned ? StatsLogic.MEDALS[b.earned.tier] + ' ' + b.earned.tier.toUpperCase() : '🔒 LOCKED';
+        return '<tr class="click" data-sbeast="' + a.esc(b.name) + '"><td>' + a.esc((b.icon ? b.icon + ' ' : '') + b.name) + '</td><td class="num">' + b.watched +
+          '</td><td class="num">' + b.listed + '</td>' + lad.map(function (d) {
+            return '<td class="small">' + (b.watched >= d.threshold ? '🏆 Unlocked' : '<span class="faint">🔒 Locked</span>') + '</td>';
+          }).join('') + '<td><b>' + a.esc(cur) + '</b></td><td class="small">' + (b.next ? b.watched + '/' + b.next.threshold : 'Complete') +
+          '</td><td class="small">' + a.esc(b.goldNote) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    var plat = p.def ? '<div class="panel plat"><div class="gem' + (p.earned ? ' on' : '') + '">💎</div><div class="grow"><h2 style="margin:0 0 4px">Platinum' +
+      (p.earned ? ' • UNLOCKED' : '') + '</h2><div class="muted small">' + a.esc(p.def.metric) + ' • rules ' + a.esc(p.def.rule_version) + '</div>' +
+      '<div class="row"><span style="width:150px">Core Golds</span><div class="grow bar"><i style="width:' + (p.coreGolds / t.core.length * 100) + '%"></i></div><b>' + p.coreGolds + '/' + t.core.length + '</b></div>' +
+      '<div class="row"><span style="width:150px">Bestiary Golds</span><div class="grow bar"><i style="width:' + Math.min(100, p.bestiaryGolds / p.def.threshold * 100) + '%"></i></div><b>' + p.bestiaryGolds + '/' + p.def.threshold + '</b></div>' +
+      '</div></div>' : '';
+    return '<p class="muted">A live horror trophy cabinet. Bronze gets you started, Silver proves commitment, Gold requires obsession, and Platinum is for deeply concerning behaviour. 🎮💀</p>' +
+      stats(a, [['Unlocked', s.unlocked], ['Total', s.total], ['Complete', Math.round(s.pct * 100) + '%'], ['🥉 Bronze', s.byTier.Bronze],
+        ['🥈 Silver', s.byTier.Silver], ['🥇 Gold', s.byTier.Gold], ['💎 Platinum', s.byTier.Platinum]]) +
+      '<div class="trophies">' + core + '</div>' + plat +
+      '<div class="panel"><h2>👹 Bestiary trophy case</h2><p class="small muted">Every creature category has the same ladder: Bronze = watch 1, Silver = watch 5, Gold = watch 10. ' +
+        'Categories under 10 films get flagged for expansion, because apparently the trophy cabinet now assigns side quests. Click a category for its films.</p>' + beasts + '</div>' +
+      '<p class="small faint">Tiers use absolute milestones, not list-completion percentages. Once you earn a trophy, expanding your lists cannot take it away. 🏆</p>';
+  }
+
+  // ---------------------------------------------------------------- taste dna
+  function renderDna(a, M) {
+    var d = StatsLogic.dna(M, st.dnaFam);
+    var fams = {};
+    M.collList.forEach(function (c) { fams[c.family] = 1; });
+    var rows = d.rows.filter(function (r) { return st.dnaAll || r.rated > 0; })
+      .sort(function (x, y) { return (y.avg === null ? -1 : y.avg) - (x.avg === null ? -1 : x.avg) || y.rated - x.rated; });
+    return '<p class="muted">Your ratings slowly expose which corners of horror you actually adore and which ones you merely claim to adore. 😭</p>' +
+      stats(a, [['Rated films', d.ratedFilms], ['Overall avg', avgText(d.overallAvg)],
+        ['Best performing list', d.best ? d.best.coll.name + ' (' + StatsLogic.round1(d.best.avg) + ')' : 'Not enough ratings yet'], ['DNA status', d.status]]) +
+      '<div class="toolbar"><select data-sdnafam>' + a.options(Object.keys(fams), st.dnaFam, 'Every family') + '</select>' +
+        '<label class="small muted"><input type="checkbox" data-sdnaall' + (st.dnaAll ? ' checked' : '') + '> Show lists with no ratings yet</label></div>' +
+      '<div class="panel"><table><thead><tr><th>List</th><th>Family</th><th class="num">Tracked</th><th class="num">Watched</th><th class="num">Rated</th>' +
+        '<th class="num">Avg /10</th><th>DNA verdict</th><th class="num">Love 9+</th><th class="num">Pain 1–4</th></tr></thead><tbody>' +
+        (rows.length ? rows.map(function (r) {
+          return '<tr class="click" data-sdna="' + a.esc(r.coll.collection_id) + '"><td>' + a.esc((r.coll.icon ? r.coll.icon + ' ' : '') + r.coll.name) + '</td><td class="small muted">' +
+            a.esc(r.coll.family) + '</td><td class="num">' + r.tracked + '</td><td class="num">' + r.watched + '</td><td class="num">' + r.rated + '</td><td class="num">' +
+            (r.avg === null ? '—' : StatsLogic.round1(r.avg)) + '</td><td>' + (r.verdict ? a.esc(r.verdict.label) : '<span class="faint">—</span>') + '</td><td class="num">' +
+            pctText(a, r.love) + '</td><td class="num">' + pctText(a, r.pain) + '</td></tr>';
+        }).join('') : '<tr><td colspan="9" class="empty">No rated films on these lists yet.</td></tr>') + '</tbody></table>' +
+        '<p class="small faint">Click a list to see the rated films behind its average.</p></div>';
+  }
+
+  // ---------------------------------------------------------------- ratings
+  function renderRatings(a, M) {
+    var d = StatsLogic.distribution(M);
+    var max = Math.max.apply(null, d.tiers.map(function (t) { return t.films.length; }).concat([1]));
+    var smax = Math.max.apply(null, d.scores.map(function (t) { return t.films.length; }).concat([1]));
+    var cmax = Math.max.apply(null, d.cunt.map(function (t) { return t.films.length; }).concat([1]));
+    return stats(a, [['Total rated', d.total], ['Average', avgText(d.avg)], ['Most common', d.mostCommon ? d.mostCommon.label : '—'], ['👑 Obsession-tier', d.obsession]]) +
+      '<div class="grid g2"><div class="panel"><h2>Verdicts</h2><div class="hbars">' + d.tiers.map(function (t) {
+          return '<div class="row" data-stier="' + a.esc(t.v.key) + '"><span style="width:150px">' + a.esc(t.v.label) + '</span><div class="grow bar"><i style="width:' +
+            (t.films.length / max * 100) + '%"></i></div><b style="width:32px;text-align:right">' + t.films.length + '</b></div>';
+        }).join('') + '</div></div>' +
+        '<div class="panel"><h2>Every score, 1 to 10</h2><div class="vbars">' + d.scores.map(function (s) {
+          return '<div data-sscore="' + s.score + '"><span>' + s.films.length + '</span><i style="height:' + (s.films.length / smax * 120) + 'px"></i><b>' + s.score + '</b></div>';
+        }).join('') + '</div></div></div>' +
+      '<div class="panel"><h2>💅🏻 Cuntometer <span class="act muted small">its own /5 scale, never mixed with the /10</span></h2><div class="hbars">' + d.cunt.map(function (c) {
+          return '<div class="row" data-scunt="' + c.score + '"><span style="width:150px">' + c.score + '/5</span><div class="grow bar"><i style="width:' +
+            (c.films.length / cmax * 100) + '%"></i></div><b style="width:32px;text-align:right">' + c.films.length + '</b></div>';
+        }).join('') + '</div></div>' +
+      '<p class="small faint">One film, one vote across the entire Film Library, including unlisted films. Only valid ratings from 1 to 10 count. Click any bar for its films.</p>';
+  }
+
+  // ---------------------------------------------------------------- passport
+  function renderPassport(a, M) {
+    var p = StatsLogic.passport(M);
+    var cmax = Math.max.apply(null, p.countries.map(function (c) { return c.films.length; }).concat([1]));
+    var dmax = Math.max.apply(null, p.decades.map(function (c) { return c.films.length; }).concat([1]));
+    var films = p.films;
+    if (st.pfilter) films = st.pfilter.kind === 'country' ? films.filter(function (f) { return f.countries.indexOf(st.pfilter.value) >= 0; })
+      : films.filter(function (f) { return f.year && HQ.decadeOf(Number(f.year)) === st.pfilter.value; });
+    return stats(a, [['Watched films', p.films.length], ['Decades visited', p.decades.length], ['Countries logged', p.countries.length],
+        ['No country yet', p.noCountry.length]]) +
+      '<div class="grid g2"><div class="panel"><h2>Stamps by country</h2><div class="hbars">' + p.countries.map(function (c) {
+          return '<div class="row" data-spass="country" data-sval="' + a.esc(c.name) + '"><span style="width:170px">' + a.esc(c.name) + '</span><div class="grow bar"><i style="width:' +
+            (c.films.length / cmax * 100) + '%"></i></div><b style="width:32px;text-align:right">' + c.films.length + '</b></div>';
+        }).join('') + '</div></div>' +
+        '<div class="panel"><h2>Decades visited</h2><div class="vbars">' + p.decades.map(function (d) {
+          return '<div data-spass="decade" data-sval="' + a.esc(d.name) + '"><span>' + d.films.length + '</span><i style="height:' + (d.films.length / dmax * 120) + 'px"></i><b>' + a.esc(d.name) + '</b></div>';
+        }).join('') + '</div><p class="small faint">Co-productions split into individual countries.</p></div></div>' +
+      '<div class="panel"><h2>' + (st.pfilter ? 'Watched films • ' + a.esc(st.pfilter.value) + ' <span class="act"><button class="btn ghost" data-spassx>Show all</button></span>' : 'Every stamp in the passport') + '</h2>' +
+        '<table><thead><tr><th>Film</th><th>Countries</th><th class="num">Year</th><th>Decade</th><th>Rating</th></tr></thead><tbody>' + films.map(function (f) {
+          return '<tr><td>' + a.filmLink(f) + '</td><td class="small">' + (f.countries.length ? a.esc(f.countries.join(', ')) : '<span class="faint">not logged</span>') +
+            '</td><td class="num">' + a.esc(f.year || '') + '</td><td>' + a.esc(f.year ? HQ.decadeOf(Number(f.year)) : '') + '</td><td>' + a.ratingCell(f) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+  }
+
+  // ---------------------------------------------------------------- franchises
+  function renderFranchises(a, M) {
+    var b = StatsLogic.franchiseBoard(M);
+    return '<p class="muted">Every franchise at a glance, plus the next unwatched entry so Jason X cannot ambush you before Part 2. 💀</p>' +
+      stats(a, [['Watched', b.watched], ['Total entries', b.total], ['Overall complete', Math.round(b.pct * 100) + '%'], ['Franchises', b.rows.length]]) +
+      '<div class="panel"><table><thead><tr><th>Franchise</th><th class="num">Watched</th><th class="num">Total</th><th class="num">Unsure</th><th style="width:200px">Complete</th>' +
+        '<th>Next unwatched entry</th></tr></thead><tbody>' + b.rows.map(function (r) {
+          return '<tr class="click" data-sfran="' + a.esc(r.coll.collection_id) + '"><td>' + a.esc((r.coll.icon ? r.coll.icon + ' ' : '') + r.coll.name) + '</td><td class="num">' +
+            r.watched + '</td><td class="num">' + r.total + '</td><td class="num">' + (r.unsure || '') + '</td><td><div class="row" style="border:0;padding:0"><div class="grow bar"><i style="width:' +
+            r.pct * 100 + '%"></i></div><span class="small" style="width:42px;text-align:right">' + Math.round(r.pct * 100) + '%</span></div></td><td>' +
+            (r.next ? a.filmLink(r.next) : (r.pct >= 1 ? '✅ Complete' : '<span class="faint">Only unsure entries left</span>')) + '</td></tr>';
+        }).join('') + '</tbody></table><p class="small faint">Click a franchise for every entry in order.</p></div>';
+  }
+
+  // ---------------------------------------------------------------- graveyard
+  function headstone(a, film, rawName, cause, when, extra) {
+    return '<div class="stone"><div class="rip">R.I.P.</div><div class="who">' + (film ? a.filmLink(film) : a.esc(rawName)) + '</div>' +
+      '<div class="cause">' + (cause ? a.esc(cause) : 'Cause of death unrecorded') + '</div>' + (when ? '<div class="when">' + when + '</div>' : '') + (extra || '') + '</div>';
+  }
+
+  function renderGraveyard(a, M) {
+    var g = StatsLogic.graveyard(M);
+    return '<p class="muted">DNFs arrive automatically. Manual burials are for films you rejected so hard they deserve a headstone. 🪦</p>' +
+      stats(a, [['Total buried', g.auto.length + g.manual.length], ['DNFs', g.auto.length], ['Manual burials', g.manual.length]]) +
+      '<div class="panel"><h2>⚰️ Auto-graveyard • DNFs</h2>' + (g.auto.length ? '<div class="stones">' + g.auto.map(function (x) {
+          var cause = x.cause.length > 140 ? x.cause.slice(0, 140) + '…' : x.cause;
+          return headstone(a, x.film, '', cause, (x.context ? a.esc(x.context) : 'Unlisted') + (x.film.rating ? ' • ' + x.film.rating + '/10' : ''));
+        }).join('') + '</div>' : '<div class="empty">No corpses yet. Everything you started, you finished. Suspicious.</div>') +
+        '<p class="small faint">Mark a film DNF and it buries itself here. Its cause of death is your reaction note.</p></div>' +
+      (st.form ? renderForm(a, M) : '') +
+      '<div class="panel"><h2>🪦 Manual burials • rejected / banished <span class="act"><button class="btn primary" data-snewburial>Bury a film</button></span></h2>' +
+        (g.manual.length ? '<div class="stones">' + g.manual.map(function (x) {
+          var r = x.rec;
+          return headstone(a, x.film, r.raw_film, r.cause_of_death, [r.context, r.interred_date ? 'Interred ' + a.fmtDate(r.interred_date) : ''].filter(Boolean).map(a.esc).join(' • ') +
+            (r.notes ? '<br>' + a.esc(r.notes) : ''), '<button class="btn ghost" data-seditburial="' + a.esc(r.burial_id) + '">Edit</button>');
+        }).join('') + '</div>' : '<div class="empty">The manual plot is empty. For now.</div>') +
+        '<p class="small faint">A burial is its own record: it never changes the film\'s status, rating or discovery verdict.</p></div>';
+  }
+
+  // ---------------------------------------------------------------- awards
+  function renderAwards(a, M) {
+    var list = StatsLogic.awards(M);
+    return '<p class="muted">The Horror Awards. Hand out the gongs; no speeches longer than the film. 🎖️</p>' + (st.form ? renderForm(a, M) : '') +
+      '<div class="panel"><h2>Horror Awards <span class="act"><button class="btn" data-snewaward>Add an award</button></span></h2>' +
+        '<table><thead><tr><th>Award</th><th>Winner</th><th>Rating</th><th>Notes</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (x) {
+          var w = x.rec, f = x.film;
+          var rating = f ? a.ratingCell(f) : (w.award_rating ? a.esc(w.award_rating) : '<span class="faint">—</span>');
+          var then = f && w.award_rating && String(w.award_rating) !== String(f.rating === null || f.rating === undefined ? '' : f.rating) ?
+            ' <span class="small faint">(' + a.esc(w.award_rating) + ' when it won)</span>' : '';
+          return '<tr><td><b>' + a.esc(w.label) + '</b></td><td>' + (f ? a.filmLink(f) : w.raw_winner ? a.esc(w.raw_winner) : '<span class="faint">Not awarded yet</span>') +
+            '</td><td>' + rating + then + '</td><td class="small muted">' + a.esc(w.notes || '') + '</td><td><button class="btn ghost" data-seditaward="' + a.esc(w.award_id) + '">' +
+            (f || w.raw_winner ? 'Edit' : 'Award it') + '</button></td></tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">No awards set up.</td></tr>') + '</tbody></table></div>';
+  }
+
+  // ---------------------------------------------------------------- forms
+  function filmPicker(a, M, filmId) {
+    var chosen = filmId ? M.byId[filmId] : null;
+    var hits = st.pickQ.trim() ? HQ.search(M, st.pickQ).slice(0, 8) : [];
+    return '<div class="pick"><input class="input" id="spick" placeholder="Search your films" autocomplete="off" value="' +
+      a.esc(chosen && !st.pickQ ? chosen.key : st.pickQ) + '">' +
+      (hits.length ? '<div class="suggest">' + hits.map(function (f) {
+        return '<div data-spick="' + a.esc(f.id) + '"><span class="t">' + a.esc(f.key) + '</span>' + a.statusChip(f.status) + '</div>';
+      }).join('') + '</div>' : '') + '</div>';
+  }
+
+  function renderForm(a, M) {
+    var f = st.form, d = f.data, title, body, del = '';
+    if (f.kind === 'burial') {
+      title = d.burial_id ? 'Edit headstone' : 'Bury a film';
+      body = '<label>Film</label>' + (f.picker ? filmPicker(a, M, d.film_id) : '<div>' + a.esc(d.raw_film) + ' <span class="small faint">(not in the library)</span></div>') +
+        '<label>Context</label><input class="input" id="sf_ctx" value="' + a.esc(d.context || '') + '" placeholder="e.g. Rejected from the Excavator">' +
+        '<label>Cause of death</label><input class="input" id="sf_cause" value="' + a.esc(d.cause_of_death || '') + '" placeholder="e.g. Bored to death by minute 12">' +
+        '<label>Date interred</label><input class="input" type="date" id="sf_date" value="' + a.esc(d.interred_date || '') + '">' +
+        '<label>Notes</label><input class="input" id="sf_notes" value="' + a.esc(d.notes || '') + '">';
+      if (d.burial_id) del = '<span class="grow"></span><button class="btn ghost" data-sdel>Dig it back up</button>';
+    } else {
+      title = d.award_id ? d.label : 'New award';
+      body = '<label>Award</label><input class="input" id="sf_label" value="' + a.esc(d.label || '') + '" placeholder="e.g. February favourite">' +
+        '<label>Winner</label>' + filmPicker(a, M, d.winner_film_id) +
+        '<label>Notes</label><input class="input" id="sf_notes" value="' + a.esc(d.notes || '') + '">';
+      if (d.award_id) del = '<span class="grow"></span>' + (d.winner_film_id ? '<button class="btn ghost" data-sclearwin>Clear winner</button>' : '') +
+        '<button class="btn ghost" data-sdel>Delete award</button>';
+    }
+    return '<div class="panel" style="margin-bottom:16px;border-color:var(--blood2)"><h2>' + a.esc(title) + '</h2><div class="form">' + body + '</div>' +
+      '<div style="margin-top:14px;display:flex;gap:8px"><button class="btn primary" data-ssave>Save</button><button class="btn ghost" data-scancel>Cancel</button>' + del + '</div></div>';
+  }
+
+  function readForm(a) {
+    var d = st.form.data, v = function (id) { var el = a.$('#' + id); return el ? el.value : undefined; };
+    var keep = function (k, id) { var x = v(id); if (x !== undefined) d[k] = x; };
+    if (st.form.kind === 'burial') { keep('context', 'sf_ctx'); keep('cause_of_death', 'sf_cause'); keep('interred_date', 'sf_date'); keep('notes', 'sf_notes'); }
+    else { keep('label', 'sf_label'); keep('notes', 'sf_notes'); }
+  }
+
+  function openForm(kind, data) {
+    // A migrated headstone for a film the library never knew keeps its raw name; everything else picks a real film.
+    st.form = { kind: kind, data: data, picker: kind !== 'burial' || !!data.film_id || !data.raw_film };
+    st.pickQ = '';
+  }
+
+  function upsert(list, key, rec) {
+    for (var i = 0; i < list.length; i++) if (list[i][key] === rec[key]) { list[i] = rec; return; }
+    list.push(rec);
+  }
+
+  function save(a, M) {
+    readForm(a);
+    var f = st.form, d = f.data;
+    var done = function (msg) { st.form = null; a.render(); a.toast(msg, 'ok'); };
+    var fail = function (e) { a.toast(e.message, 'bad'); };
+    if (f.kind === 'burial') {
+      if (f.picker && !d.film_id) return a.toast('Pick the film you are burying.', 'bad');
+      if (f.picker) d.raw_film = '';
+      return a.call('apiSaveBurial', d).then(function (rec) {
+        M.raw.burials = M.raw.burials || []; upsert(M.raw.burials, 'burial_id', rec); done('Buried ' + rec.raw_film + '. 🪦');
+      }).catch(fail);
+    }
+    return a.call('apiSaveAward', d).then(function (rec) {
+      upsert(M.raw.awards, 'award_id', rec); done(rec.raw_winner ? rec.label + ': ' + rec.raw_winner + ' 🎖️' : 'Saved ' + rec.label);
+    }).catch(fail);
+  }
+
+  function remove(a, M) {
+    var f = st.form, d = f.data;
+    if (f.kind === 'burial') {
+      return a.call('apiDeleteBurial', d.burial_id).then(function () {
+        M.raw.burials = M.raw.burials.filter(function (x) { return x.burial_id !== d.burial_id; }); st.form = null; a.render(); a.toast('Dug back up. It lives. 🧟', 'ok');
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+    }
+    if (!confirm('Delete the award "' + d.label + '"?')) return;
+    return a.call('apiDeleteAward', d.award_id).then(function () {
+      M.raw.awards = M.raw.awards.filter(function (x) { return x.award_id !== d.award_id; }); st.form = null; a.render(); a.toast('Award deleted', 'ok');
+    }).catch(function (e) { a.toast(e.message, 'bad'); });
+  }
+
+  // ---------------------------------------------------------------- shell
+  function render(a) {
+    var M = a.model(), body;
+    if (st.tab === 'dna') body = renderDna(a, M);
+    else if (st.tab === 'ratings') body = renderRatings(a, M);
+    else if (st.tab === 'passport') body = renderPassport(a, M);
+    else if (st.tab === 'franchises') body = renderFranchises(a, M);
+    else if (st.tab === 'graveyard') body = renderGraveyard(a, M);
+    else if (st.tab === 'awards') body = renderAwards(a, M);
+    else body = renderTrophies(a, M);
+    return a.topBar('Stats + Trophies', 'Numbers that judge you, live. 🏆') +
+      '<div class="toolbar"><div class="seg" style="flex-wrap:wrap">' + TABS.map(function (t) {
+        return '<button data-stab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
+      }).join('') + '</div></div><div class="statsv">' + renderDrill(a, M) + body + '</div>';
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-stab],[data-sdrillx],[data-sbeast],[data-sdna],[data-stier],[data-sscore],[data-scunt],[data-spass],[data-spassx],[data-sfran],' +
+      '[data-snewburial],[data-seditburial],[data-snewaward],[data-seditaward],[data-spick],[data-ssave],[data-scancel],[data-sdel],[data-sclearwin]');
+    if (!t) return false;
+    if (ev.target.closest('[data-film]') && !t.hasAttribute('data-spick')) return false;
+    var d = t.dataset, M = a.model();
+    if (d.stab) { st.tab = d.stab; st.drill = null; st.form = null; a.render(); return true; }
+    if (d.sdrillx !== undefined) { st.drill = null; a.render(); return true; }
+    if (d.sbeast) {
+      var bc = M.collList.filter(function (c) { return c.family === 'Bestiary' && c.name === d.sbeast; })[0];
+      if (bc) drill('👹 ' + bc.name, StatsLogic.filmsIn(M, bc.collection_id));
+      a.render(); return true;
+    }
+    if (d.sdna) {
+      var r = StatsLogic.dna(M).rows.filter(function (x) { return x.coll.collection_id === d.sdna; })[0];
+      if (r) drill('🧬 ' + r.coll.name + ' • rated films', r.ratedFilms.slice().sort(function (x, y) { return y.rating - x.rating; }));
+      a.render(); return true;
+    }
+    if (d.stier) {
+      var tier = StatsLogic.distribution(M).tiers.filter(function (x) { return x.v.key === d.stier; })[0];
+      drill(tier.v.label, tier.films); a.render(); return true;
+    }
+    if (d.sscore) {
+      drill('Rated ' + d.sscore + '/10', StatsLogic.distribution(M).scores[Number(d.sscore) - 1].films); a.render(); return true;
+    }
+    if (d.scunt) {
+      drill('💅🏻 Cuntometer ' + d.scunt + '/5', StatsLogic.distribution(M).cunt[Number(d.scunt) - 1].films); a.render(); return true;
+    }
+    if (d.spass) { st.pfilter = { kind: d.spass, value: d.sval }; a.render(); return true; }
+    if (d.spassx !== undefined) { st.pfilter = null; a.render(); return true; }
+    if (d.sfran) {
+      var fc = M.coll[d.sfran];
+      drill('🔪 ' + fc.name + ' • in order', (M.entriesByColl[d.sfran] || []).map(function (e) { return M.byId[e.film]; }).filter(Boolean));
+      a.render(); return true;
+    }
+    if (d.snewburial !== undefined) { openForm('burial', { interred_date: HQ.isoToday() }); a.render(); return true; }
+    if (d.seditburial) {
+      var b = M.raw.burials.filter(function (x) { return x.burial_id === d.seditburial; })[0];
+      openForm('burial', JSON.parse(JSON.stringify(b))); a.render(); return true;
+    }
+    if (d.snewaward !== undefined) { openForm('award', {}); a.render(); return true; }
+    if (d.seditaward) {
+      var w = M.raw.awards.filter(function (x) { return x.award_id === d.seditaward; })[0];
+      openForm('award', JSON.parse(JSON.stringify(w))); a.render(); return true;
+    }
+    if (d.spick) {
+      readForm(a);
+      var fd = st.form.data, film = M.byId[d.spick];
+      if (st.form.kind === 'burial') {
+        fd.film_id = d.spick;
+        if (!fd.context && film.memory && film.memory[0]) fd.context = film.memory[0] + (film.memory[1] ? ' • ' + film.memory[1] : '');
+      } else fd.winner_film_id = d.spick;
+      st.pickQ = ''; a.render(); return true;
+    }
+    if (d.sclearwin !== undefined) { readForm(a); st.form.data.winner_film_id = ''; save(a, M); return true; }
+    if (d.scancel !== undefined) { st.form = null; a.render(); return true; }
+    if (d.ssave !== undefined) { save(a, M); return true; }
+    if (d.sdel !== undefined) { remove(a, M); return true; }
+    return false;
+  }
+
+  function onInput(ev, a) {
+    if (ev.target.id !== 'spick') return false;
+    readForm(a);
+    var pos = ev.target.selectionStart;
+    st.pickQ = ev.target.value;
+    if (st.form.kind === 'burial') st.form.data.film_id = null; else st.form.data.winner_film_id = null;
+    a.render();
+    var again = a.$('#spick'); again.focus(); again.setSelectionRange(pos, pos);
+    return true;
+  }
+
+  function onChange(ev, a) {
+    if (ev.target.hasAttribute('data-sdnafam')) { st.dnaFam = ev.target.value; a.render(); return true; }
+    if (ev.target.hasAttribute('data-sdnaall')) { st.dnaAll = ev.target.checked; a.render(); return true; }
+    return false;
+  }
+
+  App.view('stats', { render: render, onClick: onClick, onInput: onInput, onChange: onChange });
+})();
+</script>

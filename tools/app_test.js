@@ -296,4 +296,56 @@ assert.ok(/no Curated list/.test(FUN.movieNight(MX, 'Beauty & Beast').problem), 
 const chaos = FUN.movieNight(MF, 'Chaos Pair');
 assert.ok(!chaos.one || !chaos.two || chaos.one.id !== chaos.two.id);
 
+// Stats + Trophies.
+const statsSrc = fs.readFileSync(path.join(SRC, 'ViewStats.html'), 'utf8');
+const statsMod = { exports: {} };
+new Function('module', 'HQ', statsSrc.match(/<script>([\s\S]*?)<\/script>/)[1])(statsMod, HQ);
+new Function('App', statsSrc.match(/<script>([\s\S]*?)<\/script>/g)[1].replace(/<\/?script>/g, ''))({ view: () => {} });
+const SL = statsMod.exports;
+const MS = HQ.build(run('apiBootstrap()'));
+const cab = SL.cabinet(MS);
+assert.strictEqual(cab.summary.total, 21 + 45 + 1, 'old cabinet total: 21 core + 45 Bestiary + Platinum');
+const tierSum = cab.summary.byTier.Bronze + cab.summary.byTier.Silver + cab.summary.byTier.Gold + cab.summary.byTier.Platinum;
+assert.strictEqual(cab.summary.unlocked, tierSum);
+cab.bestiary.forEach(b => assert.ok(b.listed >= 10 ? b.goldNote === '✅ Gold possible' : b.goldNote === '➕ Add ' + (10 - b.listed) + ' more'));
+const dist = SL.distribution(MS);
+assert.strictEqual(dist.total, MS.films.filter(f => f.rating !== null && f.rating !== undefined).length, 'one film, one vote');
+assert.strictEqual(dist.tiers.reduce((s, x) => s + x.films.length, 0), dist.total);
+assert.strictEqual(dist.scores.reduce((s, x) => s + x.films.length, 0), dist.total);
+const dna = SL.dna(MS);
+assert.ok(dna.rows.every(r => r.rated <= r.tracked && r.watched <= r.tracked));
+assert.strictEqual(dna.status, 'EARLY DNA 🧪', 'under 25 rated is early DNA');
+assert.ok(!dna.best || dna.best.rated >= 2, 'best list needs 2+ ratings');
+const pp = SL.passport(MS);
+assert.strictEqual(pp.countries.length, Object.keys(HQ.passport(MS).countries).length, 'passport countries match Logic');
+assert.strictEqual(pp.decades.length, Object.keys(HQ.passport(MS).decades).length, 'passport decades match Logic');
+const fb = SL.franchiseBoard(MS);
+assert.ok(fb.watched <= fb.total);
+// Burials stay separate from film status.
+const victimFilm = MS.films.find(f => f.status === 'Not watched');
+const bur = run(`apiSaveBurial({ film_id: ${JSON.stringify(victimFilm.id)}, cause_of_death: 'Boredom', interred_date: '2026-10-16' })`);
+assert.ok(/^B\d{4}$/.test(bur.burial_id));
+assert.strictEqual(bur.raw_film, victimFilm.key);
+assert.strictEqual(run('apiBootstrap()').state[victimFilm.id][0], 'Not watched', 'burying never changes status');
+const bur2 = run(`apiSaveBurial({ burial_id: ${JSON.stringify(bur.burial_id)}, film_id: ${JSON.stringify(victimFilm.id)}, cause_of_death: 'Death by vibes' })`);
+assert.strictEqual(bur2.cause_of_death, 'Death by vibes');
+const MB = HQ.build(run('apiBootstrap()'));
+assert.strictEqual(SL.graveyard(MB).manual.length, (raw.burials || []).length + 1);
+run(`apiDeleteBurial(${JSON.stringify(bur.burial_id)})`);
+assert.strictEqual(run('apiBootstrap()').burials.length, (raw.burials || []).length);
+assert.throws(() => run(`apiSaveBurial({})`), /Pick the film/);
+// Awards.
+const aw = run('apiBootstrap()').awards;
+const winner = key('Evil Dead Burn (2026)');
+if (aw.length) {
+  const won = run(`apiSaveAward({ award_id: ${JSON.stringify(aw[0].award_id)}, label: ${JSON.stringify(aw[0].label)}, winner_film_id: ${JSON.stringify(winner.id)} })`);
+  assert.strictEqual(won.raw_winner, winner.key);
+  assert.strictEqual(String(won.award_rating), '10', 'records the rating at the moment it won');
+  if (aw.length > 1) assert.throws(() => run(`apiSaveAward({ award_id: ${JSON.stringify(aw[0].award_id)}, label: ${JSON.stringify(aw[1].label)} })`), /already an award/);
+}
+const newAw = run(`apiSaveAward({ label: 'February favourite' })`);
+assert.ok(/^AW\d\d$/.test(newAw.award_id) && newAw.raw_winner === '');
+run(`apiDeleteAward(${JSON.stringify(newAw.award_id)})`);
+assert.strictEqual(run('apiBootstrap()').awards.length, aw.length);
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);
