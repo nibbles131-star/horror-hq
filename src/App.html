@@ -1,5 +1,9 @@
 <script>
-/* Horror HQ web app: navigation, Home, Film Library and the film profile drawer. */
+/*
+ * Horror HQ web app core: navigation, Home, Film Library and the film profile drawer.
+ * Other sections live in their own View*.html files and plug in with App.view(id, spec),
+ * so each release only ships the section that changed.
+ */
 var App = (function () {
   var M = null;
   var view = 'home';
@@ -7,6 +11,7 @@ var App = (function () {
   var lib = { q: '', status: '', rated: '', family: '', coll: '', decade: '', country: '', discovery: '', unlisted: false, sort: 'key', dir: 1, page: 0 };
   var victim = null;
   var PAGE = 100;
+  var VIEWS = {};
 
   var SECTIONS = [
     { id: 'home', icon: '🏠', label: 'Horror HQ' },
@@ -79,6 +84,7 @@ var App = (function () {
     var html;
     if (view === 'home') html = renderHome();
     else if (view === 'library') html = renderLibrary();
+    else if (VIEWS[view]) html = VIEWS[view].render(api);
     else html = renderSoon();
     $('#main').innerHTML = html;
     if (drawerId) renderDrawer();
@@ -383,7 +389,14 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ events
+  /** Lets a section file handle its own events first; it returns true when it dealt with one. */
+  function viewHandled(kind, ev) {
+    var v = VIEWS[view];
+    return !!(M && v && v[kind] && v[kind](ev, api));
+  }
+
   function onClick(ev) {
+    if (viewHandled('onClick', ev)) return;
     var t = ev.target.closest('[data-nav],[data-film],[data-close],[data-setstatus],[data-setrating],[data-setcunt],[data-savereaction],' +
       '[data-reroll],[data-quickrate],[data-libpreset],[data-sort],[data-page],[data-libclear],[data-removeentry],[data-addentry],[data-addfilm],[data-suggest]');
     if (!t) return;
@@ -458,6 +471,7 @@ var App = (function () {
   }
 
   function onInput(ev) {
+    if (viewHandled('onInput', ev)) return;
     var t = ev.target;
     if (t.id === 'libq') {
       lib.q = t.value; lib.page = 0;
@@ -470,6 +484,7 @@ var App = (function () {
   }
 
   function onChange(ev) {
+    if (viewHandled('onChange', ev)) return;
     var k = ev.target.dataset.lib;
     if (!k) return;
     lib[k] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
@@ -526,7 +541,18 @@ var App = (function () {
     });
   }
 
-  return { start: start };
+  /** Registers a section: spec = { render(api) -> html, onClick/onInput/onChange(ev, api) -> handled? }. */
+  function registerView(id, spec) { VIEWS[id] = spec; }
+
+  /** What section files get to use. */
+  var api = {
+    model: function () { return M; }, $: $, esc: esc, call: call, toast: toast, statusChip: statusChip, ratingCell: ratingCell,
+    filmLink: filmLink, fmtDate: fmtDate, pct: pct, pick: pick, topBar: topBar, render: render, go: go, openFilm: openFilm,
+    options: options, refresh: function () {
+      return call('apiBootstrap').then(function (raw) { M = HQ.build(raw); render(); });
+    }
+  };
+
+  return { start: start, view: registerView, api: api };
 })();
-App.start();
 </script>

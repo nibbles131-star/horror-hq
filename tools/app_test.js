@@ -41,7 +41,7 @@ const HQ = mod.exports;
 
 // The app script must at least parse.
 const appSrc = fs.readFileSync(path.join(SRC, 'App.html'), 'utf8').replace(/<\/?script>/g, '');
-new Function(appSrc.replace(/App\.start\(\);\s*$/, ''));
+new Function(appSrc);
 
 const raw = run('apiBootstrap()');
 assert.ok(!raw.needsMigration);
