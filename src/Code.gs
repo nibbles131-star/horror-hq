@@ -31,7 +31,11 @@ function menuInstallUpdate() {
 }
 
 function menuRunMigration() {
-  var r = runMigration();
+  var r;
+  try { r = runMigration(); } catch (e) {
+    SpreadsheetApp.getUi().alert('Migration not run', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
   SpreadsheetApp.getUi().alert('Migration finished',
     r.passed + ' checks matched, ' + r.failed + ' differ. ' + r.exceptions.error + ' errors, ' + r.exceptions.warning +
     ' warnings. See the Migration Report tab.', SpreadsheetApp.getUi().ButtonSet.OK);

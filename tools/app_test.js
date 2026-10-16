@@ -348,4 +348,72 @@ assert.ok(/^AW\d\d$/.test(newAw.award_id) && newAw.raw_winner === '');
 run(`apiDeleteAward(${JSON.stringify(newAw.award_id)})`);
 assert.strictEqual(run('apiBootstrap()').awards.length, aw.length);
 
+// Admin: migration guard, notes, keep-separate, merge, export.
+ctx.ScriptApp = { getProjectTriggers: () => [] };
+assert.throws(() => vm.runInContext('runMigration()', ctx), /already migrated/, 'a second migration is refused');
+const adminSrc = fs.readFileSync(path.join(SRC, 'ViewAdmin.html'), 'utf8');
+const adminMod = { exports: {} };
+new Function('module', 'HQ', adminSrc.match(/<script>([\s\S]*?)<\/script>/)[1])(adminMod, HQ);
+new Function('App', adminSrc.match(/<script>([\s\S]*?)<\/script>/g)[1].replace(/<\/?script>/g, ''))({ view: () => {} });
+const AL = adminMod.exports;
+const ad = run('apiAdminData()');
+assert.strictEqual(ad.counts.Films, run('apiBootstrap()').films.length);
+assert.ok(ad.report && ad.report.checks.length > 0, 'admin shows the stored reconciliation');
+assert.strictEqual(AL.counts(ad.exceptions).open + AL.counts(ad.exceptions).resolved, ad.exceptions.length);
+const ex0 = ad.exceptions[0];
+assert.strictEqual(run(`apiResolveException(${JSON.stringify(ex0.exception_id)}, 'checked', true)`).resolved, true);
+assert.strictEqual(run(`apiResolveException(${JSON.stringify(ex0.exception_id)}, '', false)`).resolved, false);
+// Two copies of one film, set up the way a real duplicate looks.
+const twinA = run(`apiAddFilm('Twin Terror', 2001)`).film;
+const twinB = run(`apiAddFilm('Twin Terrors', 2001)`).film;
+const lists = run('apiBootstrap()').collections.filter(c => c.family !== 'Bestiary' && c.family !== 'Classics').slice(0, 2);
+assert.ok(lists.length === 2, 'fixture has two editable lists');
+run(`apiAddEntry(${JSON.stringify(lists[0].collection_id)}, ${JSON.stringify(twinA.film_id)})`);
+run(`apiAddEntry(${JSON.stringify(lists[0].collection_id)}, ${JSON.stringify(twinB.film_id)})`);
+run(`apiAddEntry(${JSON.stringify(lists[1].collection_id)}, ${JSON.stringify(twinB.film_id)})`);
+run(`apiSaveFilmState(${JSON.stringify(twinA.film_id)}, { viewing_status: 'Watched' })`);
+run(`apiSaveFilmState(${JSON.stringify(twinB.film_id)}, { viewing_status: 'DNF', rating_10: 7 })`);
+run(`apiSaveBurial({ film_id: ${JSON.stringify(twinB.film_id)}, cause_of_death: 'Twinned' })`);
+vm.runInContext(`dbAppend('MigrationExceptions', [{ exception_id: 'EX9001', severity: 'warning', kind: 'possible-duplicate', source_tab: 'test', source_ref: 'x',
+  raw_value: 'Twin Terrors (2001) / Twin Terror (2001)', detail: 'test pair', resolution: '', resolved: false }]);
+  dbAppend('FilmAliases', [{ alias_id: 'A9001', film_id: ${JSON.stringify(twinA.film_id)}, alias_display_key: 'Twin Terrors (2001)', alias_title: 'Twin Terrors',
+  alias_year: 2001, match_key: matchKey_('Twin Terrors (2001)'), status: 'review: both exist' }]); dbClearMemo();`, ctx);
+const MA = HQ.build(run('apiBootstrap()'));
+const pr = AL.pair(MA, run('apiAdminData()').exceptions.find(e => e.exception_id === 'EX9001'));
+assert.deepStrictEqual(pr.map(f => f.id).sort(), [twinA.film_id, twinB.film_id].sort(), 'note resolves to the two films');
+const prev = run(`apiMergePreview(${JSON.stringify(twinA.film_id)}, ${JSON.stringify(twinB.film_id)})`);
+assert.strictEqual(prev.moves.CollectionEntries, 1, 'entry on the second list moves');
+assert.strictEqual(prev.dupes.CollectionEntries, 1, 'same-list entry collapses');
+assert.ok(prev.conflicts.some(c => c.key === 'FilmState.viewing_status' && c.keep === 'Watched' && c.drop === 'DNF'));
+assert.ok(!prev.conflicts.some(c => c.key === 'FilmState.rating_10'), 'blank rating is filled, not a conflict');
+assert.strictEqual(run('apiBootstrap()').films.length, MA.films.length, 'preview writes nothing');
+run(`apiMergeFilms(${JSON.stringify(twinA.film_id)}, ${JSON.stringify(twinB.film_id)}, { 'FilmState.viewing_status': 'drop' })`);
+const rawM = run('apiBootstrap()');
+const MM = HQ.build(rawM);
+assert.ok(!MM.byId[twinB.film_id], 'dropped film is gone');
+assert.ok(!rawM.state[twinB.film_id], 'its state row is gone');
+const kept = MM.byId[twinA.film_id];
+assert.strictEqual(kept.rating, 7, 'blank rating filled from the dropped film');
+assert.strictEqual(kept.status, 'DNF', 'chosen value wins the conflict');
+assert.deepStrictEqual(HQ.listNames(MM, kept).sort(), [lists[0].name, lists[1].name].sort());
+assert.strictEqual((MM.entriesByFilm[kept.id] || []).length, 2, 'no duplicate entry on the shared list');
+assert.ok(rawM.burials.some(b => b.film_id === kept.id && b.raw_film === kept.key), 'burial follows the film');
+assert.ok(kept.aliases.some(x => x.key === 'Twin Terrors (2001)' && x.status === 'merged'), 'old title stays searchable');
+assert.strictEqual(HQ.search(MM, 'twin terrors')[0].id, kept.id);
+assert.ok(run('apiAdminData()').exceptions.find(e => e.exception_id === 'EX9001').resolved, 'the duplicate note closes itself');
+assert.ok(run('apiAdminData()').audit.some(x => x.action === 'merge-films'), 'merge is audited');
+assert.throws(() => run(`apiMergePreview(${JSON.stringify(kept.id)}, ${JSON.stringify(kept.id)})`), /two different/);
+// Keep separate drops the review alias and closes the note.
+const sepA = run(`apiAddFilm('Lone Wolf', 1990)`).film, sepB = run(`apiAddFilm('Lone Wolf', 1991)`).film;
+vm.runInContext(`dbAppend('MigrationExceptions', [{ exception_id: 'EX9002', severity: 'warning', kind: 'possible-duplicate', source_tab: 'test', source_ref: 'y',
+  raw_value: 'Lone Wolf (1991) / Lone Wolf (1990)', detail: 'test', resolution: '', resolved: false }]);
+  dbAppend('FilmAliases', [{ alias_id: 'A9002', film_id: ${JSON.stringify(sepA.film_id)}, alias_display_key: 'Lone Wolf (1991)', alias_title: 'Lone Wolf',
+  alias_year: 1991, match_key: matchKey_('Lone Wolf (1991)'), status: 'review: both exist' }]); dbClearMemo();`, ctx);
+const sep = run(`apiKeepSeparate('EX9002')`);
+assert.deepStrictEqual(sep.removedAliases, ['A9002']);
+assert.strictEqual(sep.exception.resolved, true);
+assert.ok(HQ.build(run('apiBootstrap()')).byId[sepB.film_id], 'both films survive');
+const exp = run('apiExportAll()');
+assert.strictEqual(exp.tables.Films.length, rawM.films.length + 2);
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

@@ -1,0 +1,347 @@
+<script>
+/* Pure Admin logic, shared with the Node tests (tools/app_test.js). */
+var AdminLogic = (function () {
+  var SEVERITY = { error: 0, warning: 1, info: 2 };
+
+  /** Migration notes, open ones first, worst first. */
+  function notes(exceptions, showResolved) {
+    return (exceptions || []).filter(function (e) { return showResolved || !e.resolved; }).slice().sort(function (a, b) {
+      return (a.resolved ? 1 : 0) - (b.resolved ? 1 : 0) || (SEVERITY[a.severity] - SEVERITY[b.severity]) || String(a.exception_id).localeCompare(String(b.exception_id));
+    });
+  }
+
+  /** The two films a possible-duplicate note names ("A / B"), if both still exist. */
+  function pair(M, ex) {
+    if (ex.kind !== 'possible-duplicate') return null;
+    var byKey = {};
+    M.films.forEach(function (f) { byKey[f.key] = f; });
+    var films = String(ex.raw_value).split(' / ').map(function (k) { return byKey[k.trim()]; }).filter(Boolean);
+    return films.length === 2 ? films : null;
+  }
+
+  function counts(exceptions) {
+    var c = { open: 0, error: 0, warning: 0, info: 0, resolved: 0 };
+    (exceptions || []).forEach(function (e) {
+      if (e.resolved) { c.resolved++; return; }
+      c.open++; c[e.severity] = (c[e.severity] || 0) + 1;
+    });
+    return c;
+  }
+
+  function show(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    return String(v);
+  }
+
+  return { notes: notes, pair: pair, counts: counts, show: show };
+})();
+if (typeof module !== 'undefined') module.exports = AdminLogic;
+</script>
+<style>
+  .sev { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line2); }
+  .sev.error { border-color: var(--blood2); color: #ff9b9b; } .sev.warning { border-color: #8a6d2b; color: #e8c46a; } .sev.info { color: var(--muted); }
+  .note { padding: 12px 0; border-bottom: 1px solid var(--line); } .note:last-child { border-bottom: 0; }
+  .note .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .note.done { opacity: .55; }
+  .mergebox { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start; }
+  .mergebox .arrow { align-self: center; font-size: 24px; color: var(--blood2); }
+  .conf { display: grid; grid-template-columns: 200px 1fr 1fr; gap: 8px 14px; align-items: center; margin: 10px 0; }
+  .conf label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .adminv > .panel, .adminv > .grid { margin-bottom: 16px; }
+  .adminv pre { white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--muted); margin: 6px 0 0; max-height: 220px; overflow: auto; }
+  .adminv .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 14px; }
+  .adminv .kv b { font-weight: 600; color: var(--muted); }
+  .posterprev { width: 120px; border-radius: 8px; margin-top: 10px; }
+</style>
+<script>
+/* Admin / quality centre: health, migration notes and duplicate review, the merge tool, backups, posters and the audit trail. */
+(function () {
+  var TABS = [['health', '🩺 Health'], ['review', '⚠️ Review'], ['merge', '🔀 Merge films'], ['backup', '💾 Backup & export'],
+    ['posters', '🖼️ Posters'], ['audit', '📜 Change log']];
+  var st = { tab: 'health', data: null, loading: false, error: '', showResolved: false, merge: { keep: null, drop: null, preview: null, prefer: {} },
+    q: { keep: '', drop: '' }, busy: false, test: null, openAudit: {} };
+
+  function load(a) {
+    if (st.data || st.loading) return;
+    st.loading = true;
+    a.call('apiAdminData').then(function (d) { st.data = d; st.loading = false; st.error = ''; a.render(); })
+      .catch(function (e) { st.loading = false; st.error = e.message; a.render(); });
+  }
+  function reload(a) { st.data = null; load(a); }
+
+  function stats(a, list) {
+    return '<div class="stats" style="grid-template-columns:repeat(' + list.length + ',1fr)">' + list.map(function (s) {
+      return '<div class="stat"><span>' + a.esc(s[0]) + '</span><b' + (String(s[1]).length > 9 ? ' style="font-size:16px;margin-top:4px"' : '') + '>' + a.esc(s[1]) + '</b></div>';
+    }).join('') + '</div>';
+  }
+  function when(iso) { return iso ? String(iso).replace('T', ' ').slice(0, 16) : '—'; }
+
+  // ---------------------------------------------------------------- health
+  function renderHealth(a, M) {
+    var d = st.data, r = d.report, c = AdminLogic.counts(d.exceptions);
+    var checks = r && r.checks ? r.checks : [];
+    return stats(a, [['Version', d.version], ['Migrated', when(d.migratedAt)], ['Checks', r ? r.passed + ' ✅ • ' + r.failed + ' ❌' : '—'],
+        ['Open notes', c.open], ['Films', d.counts.Films]]) +
+      '<div class="grid g2"><div class="panel"><h2>App</h2><div class="kv">' +
+          '<b>Web app link</b><span>' + (d.webAppUrl ? '<a class="film-link" href="' + a.esc(d.webAppUrl) + '" target="_blank">' + a.esc(d.webAppUrl) + '</a>' : '—') + '</span>' +
+          '<b>Installed release</b><span>' + a.esc(d.version) + '</span>' +
+          '<b>Updates</b><span class="small muted">Installed automatically from the Horror HQ Code folder every 15 minutes.</span>' +
+          '<b>Migration</b><span class="small muted">Ran once. Re-running is switched off, because it would replace every table and wipe what you\'ve changed in the app.</span>' +
+        '</div></div>' +
+        '<div class="panel"><h2>Tables <span class="act muted small">rows in the hidden data tabs</span></h2><table><tbody>' +
+          Object.keys(d.counts).map(function (t) { return '<tr><td>' + a.esc(t) + '</td><td class="num">' + d.counts[t] + '</td></tr>'; }).join('') +
+        '</tbody></table></div></div>' +
+      '<div class="panel"><h2>Migration reconciliation <span class="act muted small">old sheet vs migrated data</span></h2>' +
+        (checks.length ? '<table><thead><tr><th>Check</th><th>Old sheet</th><th>Migrated</th><th>Result</th></tr></thead><tbody>' + checks.map(function (k) {
+          return '<tr><td>' + a.esc(k.name) + '</td><td>' + a.esc(k.legacy) + '</td><td>' + a.esc(k.migrated) + '</td><td class="small">' +
+            (k.pass ? '✅ match' : k.explained ? '✅ explained' : '❌ differs') + (k.note && !k.pass ? '<br><span class="faint">' + a.esc(k.note) + '</span>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">No report stored.</div>') + '</div>';
+  }
+
+  // ---------------------------------------------------------------- review
+  function renderReview(a, M) {
+    var list = AdminLogic.notes(st.data.exceptions, st.showResolved), c = AdminLogic.counts(st.data.exceptions);
+    return stats(a, [['Open', c.open], ['Errors', c.error], ['Warnings', c.warning], ['Info', c.info], ['Resolved', c.resolved]]) +
+      '<div class="toolbar"><label class="small muted"><input type="checkbox" data-adshowres' + (st.showResolved ? ' checked' : '') + '> Show resolved and info notes</label></div>' +
+      '<div class="panel"><h2>Migration notes</h2>' + (list.length ? list.map(function (e) {
+        if (!st.showResolved && e.severity === 'info') return '';
+        var p = AdminLogic.pair(M, e);
+        var acts = e.resolved ? '<button class="btn ghost" data-adreopen="' + a.esc(e.exception_id) + '">Reopen</button>'
+          : p ? '<button class="btn primary" data-admergepair="' + a.esc(p[0].id + '|' + p[1].id) + '">Merge these…</button><button class="btn" data-adseparate="' + a.esc(e.exception_id) + '">Keep separate</button>'
+          : '<button class="btn" data-adresolve="' + a.esc(e.exception_id) + '">Mark resolved</button>';
+        return '<div class="note' + (e.resolved ? ' done' : '') + '"><div><span class="sev ' + a.esc(e.severity) + '">' + a.esc(e.severity) + '</span> <b>' + a.esc(e.kind) + '</b> ' +
+          '<span class="small faint">' + a.esc(e.source_tab) + ' ' + a.esc(e.source_ref) + '</span></div>' +
+          '<div style="margin-top:4px">' + (p ? a.filmLink(p[0]) + ' <span class="faint">/</span> ' + a.filmLink(p[1]) : a.esc(e.raw_value)) + '</div>' +
+          '<div class="small muted" style="margin-top:2px">' + a.esc(e.detail) + '</div>' +
+          (e.resolution ? '<div class="small" style="margin-top:4px">✔ ' + a.esc(e.resolution) + '</div>' : '') +
+          '<div class="acts">' + acts + '</div></div>';
+      }).join('') : '<div class="empty">Nothing to review. The crypt is tidy.</div>') + '</div>';
+  }
+
+  // ---------------------------------------------------------------- merge
+  function picker(a, M, side) {
+    var id = st.merge[side], chosen = id ? M.byId[id] : null, q = st.q[side];
+    var hits = q.trim() ? HQ.search(M, q).slice(0, 8) : [];
+    return '<div class="pick"><input class="input" id="ad_' + side + '" placeholder="Search your films" autocomplete="off" value="' +
+      a.esc(chosen && !q ? chosen.key : q) + '">' + (hits.length ? '<div class="suggest">' + hits.map(function (f) {
+        return '<div data-adpick="' + side + '|' + a.esc(f.id) + '"><span class="t">' + a.esc(f.key) + '</span>' + a.statusChip(f.status) + '</div>';
+      }).join('') + '</div>' : '') + '</div>';
+  }
+
+  function filmCard(a, M, f) {
+    if (!f) return '<div class="small faint" style="margin-top:8px">Pick a film.</div>';
+    return '<div class="small muted" style="margin-top:8px">' + a.statusChip(f.status) + ' ' + (f.rating ? f.rating + '/10 • ' : '') +
+      a.esc(HQ.listNames(M, f).join(', ') || 'on no lists') + (f.aliases.length ? '<br>aka ' + a.esc(f.aliases.map(function (x) { return x.key; }).join(', ')) : '') + '</div>';
+  }
+
+  var NOUN = { CollectionEntries: 'list entry', FilmCountries: 'country', FilmAliases: 'alias', WatchAgenda: 'scheduled watch',
+    ChallengeAssignments: 'challenge pick', ExcavationCandidates: 'Excavator candidate', ManualBurials: 'headstone', Awards: 'award',
+    LegacyRecords: 'old-sheet record' };
+  var FILL = { FilmState: 'status, rating and reaction', SpecialRatings: 'Cuntometer', DiscoveryMemory: 'discovery memory' };
+
+  function renderMerge(a, M) {
+    var m = st.merge, p = m.preview, keep = m.keep && M.byId[m.keep], drop = m.drop && M.byId[m.drop];
+    var plural = function (n, w) { return n + ' ' + (n === 1 ? w : w.replace(/y$/, 'ie').replace(/(ch|s)$/, '$1e') + 's'); };
+    var body = '';
+    if (p) {
+      var moved = Object.keys(p.moves).map(function (t) { return plural(p.moves[t], NOUN[t] || t); });
+      var dup = Object.keys(p.dupes).map(function (t) { return plural(p.dupes[t], NOUN[t] || t); });
+      body = '<div class="panel" style="border-color:var(--blood2)"><h2>What happens</h2>' +
+        '<p>' + a.esc(p.drop.display_key) + ' is folded into <b>' + a.esc(p.keep.display_key) + '</b> and then deleted. Its title stays searchable as an alias.</p>' +
+        '<ul class="small">' + (moved.length ? '<li>Moves across: ' + a.esc(moved.join(', ')) + '</li>' : '<li>Nothing else points at it.</li>') +
+          (dup.length ? '<li>Dropped as duplicates (the kept film already has them): ' + a.esc(dup.join(', ')) + '</li>' : '') +
+          (p.fills.length ? '<li>Blank fields on the kept film get filled from the other one: ' + a.esc(p.fills.map(function (t) { return FILL[t] || t; }).join(', ')) + '</li>' : '') +
+          (p.aliasMerged ? '<li>' + plural(p.aliasMerged, 'existing alias') + ' re-pointed to the kept film</li>' : '') + '</ul>' +
+        (p.conflicts.length ? '<h3 style="margin-top:14px">Both films have a value here. Pick which wins:</h3>' + p.conflicts.map(function (c) {
+            var name = 'adc_' + c.key.replace(/\W/g, '_'), pick = m.prefer[c.key] === 'drop' ? 'drop' : 'keep';
+            return '<div class="conf"><span class="small muted">' + a.esc(c.field.replace(/_/g, ' ')) + '</span>' +
+              '<label><input type="radio" name="' + name + '" data-adprefer="' + a.esc(c.key) + '|keep"' + (pick === 'keep' ? ' checked' : '') + '> ' + a.esc(AdminLogic.show(c.keep)) + '</label>' +
+              '<label><input type="radio" name="' + name + '" data-adprefer="' + a.esc(c.key) + '|drop"' + (pick === 'drop' ? ' checked' : '') + '> ' + a.esc(AdminLogic.show(c.drop)) + '</label></div>';
+          }).join('') : '<p class="small muted">No clashing values. Nothing to choose.</p>') +
+        '<div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" data-admergego' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Merging…' : 'Merge for good') + '</button>' +
+          '<button class="btn ghost" data-admergex>Cancel</button></div>' +
+        '<p class="small faint">The full before-state goes into the change log, so a merge can always be reconstructed.</p></div>';
+    }
+    return '<p class="muted">For two records that are really the same film. Never automatic: you pick, you preview, you confirm. 🔀</p>' +
+      '<div class="panel"><div class="mergebox"><div><h2>Keep this film</h2>' + picker(a, M, 'keep') + filmCard(a, M, keep) + '</div>' +
+        '<div class="arrow">⟵</div><div><h2>Fold this one in</h2>' + picker(a, M, 'drop') + filmCard(a, M, drop) + '</div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:14px"><button class="btn" data-adpreview' + (keep && drop ? '' : ' disabled') + '>Preview merge</button>' +
+          '<button class="btn ghost" data-adswap' + (keep || drop ? '' : ' disabled') + '>Swap</button></div></div>' + body;
+  }
+
+  // ---------------------------------------------------------------- backup
+  function renderBackup(a) {
+    var d = st.data, lb = d.lastBackup, lw = d.lastWeekly;
+    return '<div class="grid g2"><div class="panel"><h2>Snapshot backup</h2><p class="small muted">Copies every data tab into a new, dated Google Sheet in your Drive. Takes a minute.</p>' +
+          '<button class="btn primary" data-adbackup' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Backing up…' : 'Back up now') + '</button>' +
+          '<p class="small" style="margin-top:12px">Last snapshot: ' + (lb ? '<a class="film-link" href="' + a.esc(lb.url) + '" target="_blank">' + a.esc(lb.name) + '</a>' : '<span class="faint">never</span>') + '</p></div>' +
+        '<div class="panel"><h2>Weekly backup</h2><p class="small muted">Every Sunday at 4am, one rolling backup sheet is refreshed. One file, no pile-up.</p>' +
+          '<label><input type="checkbox" data-adweekly' + (d.weeklyOn ? ' checked' : '') + '> Weekly backup ' + (d.weeklyOn ? 'on' : 'off') + '</label>' +
+          '<p class="small" style="margin-top:12px">Last weekly: ' + (lw ? '<a class="film-link" href="' + a.esc(lw.url) + '" target="_blank">' + a.esc(when(lw.at)) + '</a>' : '<span class="faint">not yet</span>') + '</p></div></div>' +
+      '<div class="panel"><h2>Export</h2><p class="small muted">Every table as one JSON file, for safekeeping or for moving Horror HQ somewhere else one day.</p>' +
+        '<button class="btn" data-adexport>Download JSON</button><p class="small faint" style="margin-top:8px">If your browser blocks the download, the snapshot backup above has the same data.</p></div>';
+  }
+
+  // ---------------------------------------------------------------- posters
+  function renderPosters(a, M) {
+    var d = st.data.poster, t = st.test;
+    var sample = M.films.filter(function (f) { return f.year; })[0];
+    return '<p class="muted">Posters come from TMDB, which is free. This saves your key now; fetching posters for every film is the next feature to switch on. 🖼️</p>' +
+      '<div class="panel"><h2>TMDB key <span class="act">' + (d.keySet ? '<span class="sev info">✅ saved</span>' : '<span class="sev warning">not set</span>') + '</span></h2>' +
+        '<p class="small muted">Get one free at themoviedb.org → Settings → API. Either the API key or the read access token works. It\'s stored in the script\'s private properties, never in the sheet.</p>' +
+        '<div class="toolbar"><input class="input" type="password" id="ad_tmdb" placeholder="' + (d.keySet ? 'Key saved. Paste a new one to replace it' : 'Paste your TMDB key') + '" style="width:420px">' +
+          '<button class="btn primary" data-adsavekey>Save key</button>' + (d.keySet ? '<button class="btn ghost" data-adclearkey>Remove key</button>' : '') + '</div>' +
+        (d.keySet ? '<div class="toolbar"><button class="btn" data-adtestkey>Test with ' + a.esc(sample ? sample.key : 'Halloween (1978)') + '</button></div>' : '') +
+        (t ? (t.found ? '<div><b>' + a.esc(t.title) + '</b> (' + a.esc(t.year) + ')' + (t.poster ? '<br><img class="posterprev" src="' + a.esc(t.poster) + '" alt="poster">' : ' • no poster on TMDB') + '</div>'
+          : '<div class="small muted">TMDB found nothing for that one.</div>') : '') +
+      '</div>';
+  }
+
+  // ---------------------------------------------------------------- audit
+  function renderAudit(a) {
+    var rows = st.data.audit;
+    return '<p class="muted">The last 150 changes, newest first. Every save in the app lands here with its before and after.</p>' +
+      '<div class="panel"><table><thead><tr><th>When</th><th>Action</th><th>Record</th><th></th></tr></thead><tbody>' + rows.map(function (r) {
+        var open = st.openAudit[r.id];
+        return '<tr><td class="small">' + a.esc(when(r.at)) + '</td><td>' + a.esc(r.action) + '</td><td class="small muted">' + a.esc(r.entity + ' ' + r.entity_id) + '</td>' +
+          '<td>' + (r.before || r.after ? '<button class="btn ghost" data-adaudit="' + a.esc(r.id) + '">' + (open ? 'Hide' : 'Details') + '</button>' : '') + '</td></tr>' +
+          (open ? '<tr><td colspan="4"><b class="small">Before</b><pre>' + a.esc(r.before || '—') + '</pre><b class="small">After</b><pre>' + a.esc(r.after || '—') + '</pre></td></tr>' : '');
+      }).join('') + '</tbody></table></div>';
+  }
+
+  // ---------------------------------------------------------------- shell
+  function render(a) {
+    var M = a.model(), body;
+    load(a);
+    if (st.error) body = '<div class="panel"><div class="empty">Admin data didn\'t load: ' + a.esc(st.error) + ' <button class="btn" data-adretry>Try again</button></div></div>';
+    else if (!st.data) body = '<div class="loading" style="height:40vh">Counting the bodies…</div>';
+    else if (st.tab === 'review') body = renderReview(a, M);
+    else if (st.tab === 'merge') body = renderMerge(a, M);
+    else if (st.tab === 'backup') body = renderBackup(a);
+    else if (st.tab === 'posters') body = renderPosters(a, M);
+    else if (st.tab === 'audit') body = renderAudit(a);
+    else body = renderHealth(a, M);
+    return a.topBar('Admin', 'The boring bits that keep the horror safe. 🧰') +
+      '<div class="toolbar"><div class="seg" style="flex-wrap:wrap">' + TABS.map(function (t) {
+        return '<button data-adtab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
+      }).join('') + '</div><span class="grow"></span><button class="btn ghost" data-adrefresh>Refresh</button></div><div class="adminv">' + body + '</div>';
+  }
+
+  function upsertNote(rec) {
+    st.data.exceptions = st.data.exceptions.map(function (e) { return e.exception_id === rec.exception_id ? rec : e; });
+  }
+
+  function fail(a) { return function (e) { st.busy = false; a.render(); a.toast(e.message, 'bad'); }; }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-adtab],[data-adrefresh],[data-adretry],[data-adresolve],[data-adreopen],[data-adseparate],[data-admergepair],[data-adpick],' +
+      '[data-adpreview],[data-adswap],[data-admergego],[data-admergex],[data-adbackup],[data-adexport],[data-adsavekey],[data-adclearkey],[data-adtestkey],[data-adaudit]');
+    if (!t) return false;
+    if (ev.target.closest('[data-film]') && !t.hasAttribute('data-adpick')) return false;
+    var d = t.dataset, M = a.model();
+    if (d.adtab) { st.tab = d.adtab; a.render(); return true; }
+    if (d.adrefresh !== undefined || d.adretry !== undefined) { st.error = ''; reload(a); a.render(); return true; }
+    if (d.adresolve) {
+      var note = prompt('What did you do about it? (optional)', '');
+      if (note === null) return true;
+      a.call('apiResolveException', d.adresolve, note, true).then(function (rec) { upsertNote(rec); a.render(); a.toast('Resolved', 'ok'); }).catch(fail(a));
+      return true;
+    }
+    if (d.adreopen) { a.call('apiResolveException', d.adreopen, '', false).then(function (rec) { upsertNote(rec); a.render(); }).catch(fail(a)); return true; }
+    if (d.adseparate) {
+      a.call('apiKeepSeparate', d.adseparate).then(function (res) {
+        upsertNote(res.exception);
+        if (res.removedAliases.length) a.refresh();
+        a.render(); a.toast('Kept as separate films', 'ok');
+      }).catch(fail(a));
+      return true;
+    }
+    if (d.admergepair) {
+      var ids = d.admergepair.split('|');
+      st.merge = { keep: ids[0], drop: ids[1], preview: null, prefer: {} }; st.q = { keep: '', drop: '' }; st.tab = 'merge'; a.render(); return true;
+    }
+    if (d.adpick) {
+      var parts = d.adpick.split('|');
+      st.merge[parts[0]] = parts[1]; st.q[parts[0]] = ''; st.merge.preview = null; st.merge.prefer = {}; a.render(); return true;
+    }
+    if (d.adswap !== undefined) {
+      var k = st.merge.keep; st.merge.keep = st.merge.drop; st.merge.drop = k; st.merge.preview = null; st.merge.prefer = {}; a.render(); return true;
+    }
+    if (d.adpreview !== undefined) {
+      a.call('apiMergePreview', st.merge.keep, st.merge.drop).then(function (p) { st.merge.preview = p; st.merge.prefer = {}; a.render(); }).catch(fail(a));
+      return true;
+    }
+    if (d.admergex !== undefined) { st.merge.preview = null; a.render(); return true; }
+    if (d.admergego !== undefined) {
+      var p = st.merge.preview;
+      if (!confirm('Merge ' + p.drop.display_key + ' into ' + p.keep.display_key + '? The first one disappears for good.')) return true;
+      st.busy = true; a.render();
+      a.call('apiMergeFilms', st.merge.keep, st.merge.drop, st.merge.prefer).then(function () {
+        st.busy = false; a.toast('Merged into ' + p.keep.display_key + ' 🔀', 'ok');
+        st.merge = { keep: p.keep.film_id, drop: null, preview: null, prefer: {} };
+        reload(a);
+        return a.refresh();
+      }).catch(fail(a));
+      return true;
+    }
+    if (d.adbackup !== undefined) {
+      st.busy = true; a.render();
+      a.call('apiBackupNow').then(function (info) { st.busy = false; st.data.lastBackup = info; a.render(); a.toast('Backed up: ' + info.name, 'ok'); }).catch(fail(a));
+      return true;
+    }
+    if (d.adexport !== undefined) {
+      a.toast('Gathering every table…');
+      a.call('apiExportAll').then(function (data) {
+        var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'horror-hq-export-' + HQ.isoToday() + '.json';
+        document.body.appendChild(link); link.click(); link.remove();
+      }).catch(fail(a));
+      return true;
+    }
+    if (d.adsavekey !== undefined) {
+      var key = (a.$('#ad_tmdb') || {}).value || '';
+      if (!key.trim()) { a.toast('Paste the key first.', 'bad'); return true; }
+      a.call('apiSavePosterKey', key).then(function (res) { st.data.poster = res; st.test = null; a.render(); a.toast('TMDB key works and is saved 🖼️', 'ok'); }).catch(fail(a));
+      return true;
+    }
+    if (d.adclearkey !== undefined) {
+      a.call('apiSavePosterKey', '').then(function (res) { st.data.poster = res; st.test = null; a.render(); a.toast('Key removed', 'ok'); }).catch(fail(a));
+      return true;
+    }
+    if (d.adtestkey !== undefined) {
+      var s = M.films.filter(function (f) { return f.year; })[0];
+      a.call('apiTestPosterKey', s ? s.title : 'Halloween', s ? s.year : 1978).then(function (res) { st.test = res; a.render(); }).catch(fail(a));
+      return true;
+    }
+    if (d.adaudit) { st.openAudit[d.adaudit] = !st.openAudit[d.adaudit]; a.render(); return true; }
+    return false;
+  }
+
+  function onInput(ev, a) {
+    var id = ev.target.id;
+    if (id !== 'ad_keep' && id !== 'ad_drop') return false;
+    var side = id.slice(3), pos = ev.target.selectionStart;
+    st.q[side] = ev.target.value; st.merge[side] = null; st.merge.preview = null;
+    a.render();
+    var again = a.$('#' + id); again.focus(); again.setSelectionRange(pos, pos);
+    return true;
+  }
+
+  function onChange(ev, a) {
+    var el = ev.target;
+    if (el.hasAttribute('data-adshowres')) { st.showResolved = el.checked; a.render(); return true; }
+    if (el.hasAttribute('data-adprefer')) { var v = el.getAttribute('data-adprefer').split('|'); st.merge.prefer[v[0]] = v[1]; return true; }
+    if (el.hasAttribute('data-adweekly')) {
+      a.call('apiSetWeeklyBackup', el.checked).then(function (res) {
+        st.data.weeklyOn = res.weeklyOn; a.render(); a.toast(res.weeklyOn ? 'Weekly backup on 💾' : 'Weekly backup off', 'ok');
+      }).catch(fail(a));
+      return true;
+    }
+    return false;
+  }
+
+  App.view('admin', { render: render, onClick: onClick, onInput: onInput, onChange: onChange });
+})();
+</script>

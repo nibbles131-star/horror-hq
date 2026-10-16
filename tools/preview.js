@@ -27,11 +27,16 @@ vm.runInContext('runMigration()', ctx);
 g.Utilities = { formatDate: (d) => d.toISOString().slice(0, 10) };
 const raw = JSON.parse(JSON.stringify(vm.runInContext('apiBootstrap()', ctx)));
 const exc = JSON.parse(JSON.stringify(vm.runInContext('apiExcavatorData()', ctx)));
+ctx.ScriptApp = { getProjectTriggers: () => [] };
+const adm = JSON.parse(JSON.stringify(vm.runInContext('apiAdminData()', ctx)));
+const mprev = JSON.parse(JSON.stringify(vm.runInContext(`apiMergePreview(${JSON.stringify(raw.films[0][0])}, ${JSON.stringify(raw.films[1][0])})`, ctx)));
 
 // Fake server: every call replays through the real Apps Script code via a tiny RPC table baked into the page.
 const fake = `<script>
 var RAW = ${JSON.stringify(raw)};
 var EXC = ${JSON.stringify(exc)};
+var ADM = ${JSON.stringify(adm)};
+var MPREV = ${JSON.stringify(mprev)};
 var google = { script: { get run() {
   var ok = function () {}, bad = function () {};
   var p = new Proxy({}, { get: function (_, name) {
@@ -42,6 +47,8 @@ var google = { script: { get run() {
       setTimeout(function () {
         if (name === 'apiBootstrap') return ok(RAW);
         if (name === 'apiExcavatorData') return ok(EXC);
+        if (name === 'apiAdminData') return ok(ADM);
+        if (name === 'apiMergePreview') return ok(MPREV);
         if (name === 'apiSaveFilmState') return ok({ conflict: false, state: Object.assign({ film_id: args[0], version: (args[2] || 1) + 1, modified_at: new Date().toISOString() }, args[1]) });
         ok({});
       }, 30);

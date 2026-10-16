@@ -20,7 +20,8 @@ var App = (function () {
     { id: 'planner', icon: '📅', label: 'Watch Planner' },
     { id: 'excavator', icon: '🔎', label: 'Horror Excavator' },
     { id: 'funhouse', icon: '🎰', label: 'The Funhouse' },
-    { id: 'stats', icon: '🏆', label: 'Stats + Trophies' }
+    { id: 'stats', icon: '🏆', label: 'Stats + Trophies' },
+    { id: 'admin', icon: '🧰', label: 'Admin' }
   ];
 
   // ------------------------------------------------------------------ helpers
@@ -165,9 +166,9 @@ var App = (function () {
       '<div class="panel" style="margin-top:16px"><h2>🚨 Needs attention</h2>' +
         (alerts.length ? alerts.map(function (f) {
           return '<div class="row"><span class="t">' + filmLink(f) + ' <span class="muted small">possible duplicate of ' +
-            esc(f.aliases.map(function (a) { return a.key; }).join(', ')) + '</span></span><span class="small faint">review, never auto-merged</span></div>';
+            esc(f.aliases.map(function (a) { return a.key; }).join(', ')) + '</span></span><button class="btn ghost" data-nav="admin">Review</button></div>';
         }).join('') : '') +
-        (M.raw.openExceptions ? '<div class="row"><span class="t">' + M.raw.openExceptions + ' migration notes to review</span><span class="small faint">Migration Report tab</span></div>' : '') +
+        (M.raw.openExceptions ? '<div class="row"><span class="t">' + M.raw.openExceptions + ' migration notes to review</span><button class="btn ghost" data-nav="admin">Open Admin</button></div>' : '') +
         (!alerts.length && !M.raw.openExceptions ? '<div class="empty">All quiet. Too quiet.</div>' : '') +
       '</div>';
   }

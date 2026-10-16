@@ -59,7 +59,14 @@ function legacyTab_(ss, name) {
   return sh;
 }
 
-function runMigration() {
+function runMigration(force) {
+  // Once the app is live, a re-run would replace every table and wipe everything changed in the app since.
+  if (force !== true) {
+    var done = null;
+    try { done = getSetting('migrated_at', null); } catch (e) { done = null; }
+    if (done) throw new Error('Horror HQ was already migrated (' + done + '). Running it again would replace every table and wipe ' +
+      'everything you have changed in the app since, so it is switched off. Nothing was touched.');
+  }
   var started = new Date();
   setupDatabase();
   var L = legacySpreadsheet_();
