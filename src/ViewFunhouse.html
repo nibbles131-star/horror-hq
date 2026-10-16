@@ -1,0 +1,226 @@
+<script>
+/* Pure Funhouse logic, shared with the Node tests (tools/app_test.js). rng is injectable so tests are repeatable. */
+var FunLogic = (function () {
+  var POOLS = [['all', 'All Unwatched'], ['Bubblegum', 'Bubblegum & Cunt'], ['Yearly', 'Yearly'], ['Seasonal', 'Seasonal & Countdowns'],
+    ['Curated', 'Curated Lists'], ['Classics', 'Classic Studios'], ['Bestiary', 'Horror Bestiary'], ['Alphabet', 'Alphabet List'],
+    ['Franchise', 'Franchise Tracker']];
+  var MODES = ['Beauty & Beast', 'Bubblegum + Bleak', 'Same Decade', 'Franchise Double Bill', 'Chaos Pair'];
+  var GUIDE = {
+    'Beauty & Beast': 'One Bubblegum & Cunt pick + one Creature Feature. Pretty meets teeth.',
+    'Bubblegum + Bleak': 'One candy-coated menace + one Mind Fucker. Emotional whiplash included free.',
+    'Same Decade': 'Two random unwatched films from one randomly chosen decade.',
+    'Franchise Double Bill': 'Two next-in-line unwatched entries from the same randomly chosen franchise.',
+    'Chaos Pair': 'Two random unwatched films. Absolutely no thematic supervision.'
+  };
+
+  function pickOne(arr, rng) { return arr.length ? arr[Math.floor((rng || Math.random)() * arr.length)] : null; }
+
+  /** Unique Not-watched films across the collections that pass the filter, in list order. */
+  function unwatchedIn(M, test) {
+    var seen = {}, out = [];
+    M.collList.forEach(function (c) {
+      if (!test(c)) return;
+      (M.entriesByColl[c.collection_id] || []).forEach(function (e) {
+        var f = M.byId[e.film];
+        if (!f || seen[f.id] || f.status !== 'Not watched') return;
+        seen[f.id] = true;
+        out.push(f);
+      });
+    });
+    return out;
+  }
+
+  /** The old Slot Machine pools: every list family, or all of them together. Equal odds, no weighting. */
+  function pool(M, poolId) {
+    return unwatchedIn(M, function (c) { return poolId === 'all' || c.family === poolId; });
+  }
+
+  function listPool(M, family, name) {
+    var key = HQ.normalise(name);
+    var found = M.collList.some(function (c) { return c.family === family && HQ.normalise(c.name) === key; });
+    return found ? unwatchedIn(M, function (c) { return c.family === family && HQ.normalise(c.name) === key; }) : null;
+  }
+
+  function decadeOf(f) { return f.year ? (Math.floor(Number(f.year) / 10) * 10) + 's' : ''; }
+
+  /** Franchises with at least two unwatched entries, each with its unwatched films in tracker order. */
+  function franchiseBills(M) {
+    return M.collList.filter(function (c) { return c.family === 'Franchise'; }).map(function (c) {
+      return { coll: c, films: unwatchedIn(M, function (x) { return x.collection_id === c.collection_id; }) };
+    }).filter(function (b) { return b.films.length >= 2; });
+  }
+
+  /** One double bill. Returns { one, two, vibe, rule, problem }. */
+  function movieNight(M, mode, rng) {
+    var out = { mode: mode, one: null, two: null, rule: 'All picks are unwatched at generation time. Reroll whenever fate disappoints you.' };
+    var without = function (arr, f) { return arr.filter(function (x) { return !f || x.id !== f.id; }); };
+    if (mode === 'Beauty & Beast' || mode === 'Bubblegum + Bleak') {
+      var partner = mode === 'Beauty & Beast' ? 'Creature Features' : 'Mind Fuckers';
+      out.vibe = mode === 'Beauty & Beast' ? '💅🏻 glamour meets 👹 creature chaos' : '🫧 sugar rush followed by emotional annihilation';
+      var second = listPool(M, 'Curated', partner);
+      out.one = pickOne(pool(M, 'Bubblegum'), rng);
+      if (second === null) { out.problem = 'There is no Curated list called "' + partner + '" any more.'; return out; }
+      out.two = pickOne(without(second, out.one), rng);
+    } else if (mode === 'Same Decade') {
+      var by = {};
+      pool(M, 'all').forEach(function (f) { var d = decadeOf(f); if (d) (by[d] = by[d] || []).push(f); });
+      var decades = Object.keys(by).filter(function (d) { return by[d].length >= 2; }).sort();
+      var dec = pickOne(decades, rng);
+      out.decade = dec;
+      out.vibe = '🕰️ two victims from ' + (dec || 'the same decade');
+      out.rule = 'Only titles with a clean (YYYY) can enter.';
+      if (!dec) { out.problem = 'No decade has two unwatched films left.'; return out; }
+      out.one = pickOne(by[dec], rng);
+      out.two = pickOne(without(by[dec], out.one), rng);
+    } else if (mode === 'Franchise Double Bill') {
+      var bill = pickOne(franchiseBills(M), rng);
+      out.franchise = bill ? bill.coll.name : '';
+      out.vibe = '🔪 ' + (bill ? bill.coll.name : 'a franchise') + ' in correct unwatched order';
+      out.rule = 'Uses franchise order, so no Jason X before Part 2.';
+      if (!bill) { out.problem = 'No franchise with 2+ unwatched entries.'; return out; }
+      out.one = bill.films[0];
+      out.two = bill.films[1];
+    } else {
+      var all = pool(M, 'all');
+      out.vibe = '🎰 absolutely no thematic supervision';
+      out.one = pickOne(all, rng);
+      out.two = pickOne(without(all, out.one), rng);
+    }
+    if (!out.one || !out.two) out.problem = out.problem || 'Not enough unwatched films for this mode.';
+    return out;
+  }
+
+  return { POOLS: POOLS, MODES: MODES, GUIDE: GUIDE, pickOne: pickOne, pool: pool, listPool: listPool, franchiseBills: franchiseBills,
+    movieNight: movieNight, decadeOf: decadeOf };
+})();
+if (typeof module !== 'undefined') module.exports = FunLogic;
+</script>
+<style>
+  .fate { text-align: center; padding: 34px 20px 26px; }
+  .fate .reel { font-family: var(--display, inherit); font-size: 30px; font-weight: 800; min-height: 44px; letter-spacing: .3px; }
+  .fate .reel.rolling { color: var(--faint); filter: blur(.6px); }
+  .fate .meta { margin-top: 10px; }
+  .fate .actions { margin-top: 18px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .bigbtn { font-size: 18px; padding: 12px 28px; }
+  .bill { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: stretch; }
+  .bill .vs { align-self: center; font-size: 26px; color: var(--blood2); font-weight: 800; }
+  .feature { text-align: center; padding: 24px 16px; }
+  .feature .lbl { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+  .feature .reel { font-size: 22px; font-weight: 800; margin: 10px 0 6px; min-height: 30px; }
+  .recent { display: flex; flex-wrap: wrap; gap: 6px; }
+</style>
+<script>
+/* The Funhouse: Horror Slot Machine and the Movie Night Generator. Nothing here is saved unless you schedule it. */
+(function () {
+  var TABS = [['slot', '🎰 Slot Machine'], ['night', '🎟️ Movie Night']];
+  var st = { tab: 'slot', pool: 'all', result: null, recent: [], mode: 'Beauty & Beast', bill: null, rolling: false };
+
+  function filmMeta(a, M, f) {
+    var lists = HQ.listNames(M, f);
+    return '<div class="small muted meta">' + (f.year ? a.esc(f.year) + ' • ' : '') + (f.countries.length ? a.esc(f.countries.join(', ')) + ' • ' : '') +
+      a.esc(lists.slice(0, 3).join(', ')) + (lists.length > 3 ? ' +' + (lists.length - 3) : '') + '</div>';
+  }
+
+  function renderSlot(a, M) {
+    var counts = {};
+    FunLogic.POOLS.forEach(function (p) { counts[p[0]] = FunLogic.pool(M, p[0]).length; });
+    var f = st.result ? M.byId[st.result] : null;
+    if (f && f.status !== 'Not watched') f = null;
+    return '<div class="toolbar"><div class="seg" style="flex-wrap:wrap">' + FunLogic.POOLS.map(function (p) {
+        return '<button data-fpool="' + p[0] + '" class="' + (st.pool === p[0] ? 'on' : '') + '">' + a.esc(p[1]) +
+          ' <span class="small" style="opacity:.7">' + counts[p[0]] + '</span></button>';
+      }).join('') + '</div></div>' +
+      '<div class="panel fate"><div class="small muted">Pick a pool. Pull the lever. Accept your fate. No weighting, no mercy. 👀</div>' +
+        '<div class="reel" id="freel" style="margin-top:18px">' + (f ? a.filmLink(f) : (counts[st.pool] ? '🎰 🎰 🎰' : 'No unwatched films left in this pool 🎉')) + '</div>' +
+        (f ? filmMeta(a, M, f) : '<div class="small faint meta">' + counts[st.pool] + ' eligible film' + (counts[st.pool] === 1 ? '' : 's') + ', each with exactly the same chance.</div>') +
+        '<div class="actions"><button class="btn primary bigbtn" data-fspin' + (counts[st.pool] ? '' : ' disabled') + '>' + (f ? 'Spin again' : 'Pull the lever') + '</button>' +
+          (f ? '<button class="btn bigbtn" data-ftonight="' + a.esc(f.id) + '">Schedule for tonight</button>' : '') + '</div>' +
+      '</div>' +
+      (st.recent.length ? '<div class="panel"><h2>Fate\'s recent shortlist</h2><div class="recent">' + st.recent.map(function (id) {
+          var r = M.byId[id];
+          return r ? '<span class="chip">' + a.filmLink(r) + '</span>' : '';
+        }).join('') + '</div><p class="small faint">Rolls aren\'t saved anywhere. Schedule one if you mean it.</p></div>' : '');
+  }
+
+  function renderNight(a, M) {
+    var b = st.bill;
+    var feature = function (label, f) {
+      return '<div class="panel feature"><div class="lbl">' + label + '</div><div class="reel">' + (f ? a.filmLink(f) : '<span class="faint">No eligible film</span>') + '</div>' +
+        (f ? filmMeta(a, M, f) : '') + '</div>';
+    };
+    return '<div class="toolbar"><div class="seg" style="flex-wrap:wrap">' + FunLogic.MODES.map(function (m) {
+        return '<button data-fmode="' + a.esc(m) + '" class="' + (st.mode === m ? 'on' : '') + '">' + a.esc(m) + '</button>';
+      }).join('') + '</div></div>' +
+      '<p class="muted">' + a.esc(FunLogic.GUIDE[st.mode]) + '</p>' +
+      (b ? '<div class="bill">' + feature('Feature one', b.one) + '<div class="vs">+</div>' + feature('Feature two', b.two) + '</div>' +
+        '<div class="panel" style="text-align:center"><div><b>' + a.esc(b.vibe || '') + '</b></div>' +
+          (b.problem ? '<div class="small warn" style="margin-top:6px">' + a.esc(b.problem) + '</div>' : '') +
+          '<div class="small faint" style="margin-top:6px">' + a.esc(b.rule) + '</div>' +
+          '<div class="actions" style="margin-top:14px;display:flex;gap:8px;justify-content:center"><button class="btn primary bigbtn" data-freroll>Reroll</button>' +
+          (b.one && b.two ? '<button class="btn bigbtn" data-fbill>Schedule both for tonight</button>' : '') + '</div></div>'
+        : '<div class="panel fate"><div class="small muted">Choose a double-feature mode. Two victims enter. Your evening leaves changed. 🍿💀</div>' +
+          '<div class="actions"><button class="btn primary bigbtn" data-freroll>Generate the double bill</button></div></div>');
+  }
+
+  function render(a) {
+    var M = a.model();
+    return a.topBar('The Funhouse', 'Let fate pick. You only have to press play. 🎰') +
+      '<div class="toolbar"><div class="seg">' + TABS.map(function (t) {
+        return '<button data-ftab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
+      }).join('') + '</div></div>' + (st.tab === 'night' ? renderNight(a, M) : renderSlot(a, M));
+  }
+
+  /** A short reel animation, then the real (uniform) pick. */
+  function spin(a, M) {
+    var films = FunLogic.pool(M, st.pool);
+    if (!films.length || st.rolling) return;
+    var final = FunLogic.pickOne(films);
+    st.rolling = true;
+    var reel = a.$('#freel'), ticks = 0;
+    if (reel) reel.className = 'reel rolling';
+    var timer = setInterval(function () {
+      ticks++;
+      var r = a.$('#freel');
+      if (r) r.textContent = FunLogic.pickOne(films).key;
+      if (ticks >= 14) {
+        clearInterval(timer);
+        st.rolling = false;
+        st.result = final.id;
+        st.recent = [final.id].concat(st.recent.filter(function (id) { return id !== final.id; })).slice(0, 8);
+        a.render();
+      }
+    }, 55);
+  }
+
+  function schedule(a, M, ids, note) {
+    var today = HQ.isoToday();
+    var chain = Promise.resolve(), saved = [];
+    ids.forEach(function (id) {
+      chain = chain.then(function () {
+        return a.call('apiSaveAgenda', { planned_date: today, film_id: id, occasion: 'Movie Night', context_note: note }).then(function (rec) {
+          M.raw.agenda.push(rec); saved.push(M.byId[id].title);
+        });
+      });
+    });
+    chain.then(function () { a.toast('On tonight\'s agenda: ' + saved.join(' + '), 'ok'); })
+      .catch(function (e) { a.toast('Not scheduled: ' + e.message, 'bad'); });
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-ftab],[data-fpool],[data-fspin],[data-ftonight],[data-fmode],[data-freroll],[data-fbill]');
+    if (!t) return false;
+    if (ev.target.closest('[data-film]')) return false;
+    var d = t.dataset, M = a.model();
+    if (d.ftab) { st.tab = d.ftab; a.render(); return true; }
+    if (d.fpool) { st.pool = d.fpool; st.result = null; a.render(); return true; }
+    if (d.fspin !== undefined) { spin(a, M); return true; }
+    if (d.ftonight) { schedule(a, M, [d.ftonight], 'Slot Machine • ' + FunLogic.POOLS.filter(function (p) { return p[0] === st.pool; })[0][1]); return true; }
+    if (d.fmode) { st.mode = d.fmode; st.bill = FunLogic.movieNight(M, st.mode); a.render(); return true; }
+    if (d.freroll !== undefined) { st.bill = FunLogic.movieNight(M, st.mode); a.render(); return true; }
+    if (d.fbill !== undefined) { schedule(a, M, [st.bill.one.id, st.bill.two.id], 'Movie Night • ' + st.mode); return true; }
+    return false;
+  }
+
+  App.view('funhouse', { render: render, onClick: onClick });
+})();
+</script>

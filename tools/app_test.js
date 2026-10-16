@@ -270,4 +270,30 @@ assert.strictEqual(Object.keys(EX.latestDecisions(xd1)).length, Object.keys(EX.l
 run(`apiSetSearchState(${JSON.stringify(imp.search.search_id)}, 'Archived')`);
 assert.strictEqual(run('apiExcavatorData()').searches.find(s => s.search_id === imp.search.search_id).state, 'Archived');
 
+// Funhouse.
+const funSrc = fs.readFileSync(path.join(SRC, 'ViewFunhouse.html'), 'utf8');
+const funMod = { exports: {} };
+new Function('module', 'HQ', funSrc.match(/<script>([\s\S]*?)<\/script>/)[1])(funMod, HQ);
+const FUN = funMod.exports;
+const MF = HQ.build(run('apiBootstrap()'));
+const allPool = FUN.pool(MF, 'all');
+assert.ok(allPool.length > 0 && allPool.every(f => f.status === 'Not watched'), 'slot pool is unwatched only');
+assert.strictEqual(new Set(allPool.map(f => f.id)).size, allPool.length, 'slot pool is unique');
+FUN.POOLS.slice(1).forEach(p => FUN.pool(MF, p[0]).forEach(f => assert.ok(allPool.includes(f), p[0] + ' is inside All Unwatched')));
+// A synthetic franchise to pin the double-bill order rule.
+const tfr = { collection_id: 'CXF', family: 'Franchise', name: 'Test Franchise', sort_order: 999 };
+const ff = ['Part 1 (1980)', 'Part 2 (1981)', 'Part 3 (1982)', 'Jason X (2001)'].map((k, i) =>
+  ({ id: 'FX' + i, key: k, title: k, year: 1980 + i, status: i === 0 ? 'Watched' : 'Not watched', countries: [], aliases: [] }));
+const MX = { collList: [tfr], coll: { CXF: tfr }, byId: {}, entriesByColl: { CXF: [] }, entriesByFilm: {} };
+ff.forEach((f, i) => { MX.byId[f.id] = f; MX.entriesByColl.CXF.push({ id: 'EX' + i, coll: 'CXF', film: f.id, seq: i + 1 }); });
+const bill = FUN.movieNight(MX, 'Franchise Double Bill', () => 0.99);
+assert.strictEqual(bill.one.key, 'Part 2 (1981)');
+assert.strictEqual(bill.two.key, 'Part 3 (1982)', 'next two unwatched in order, never Jason X first');
+const sd = FUN.movieNight(MX, 'Same Decade', () => 0);
+assert.strictEqual(sd.decade, '1980s');
+assert.notStrictEqual(sd.one.id, sd.two.id, 'never the same film twice');
+assert.ok(/no Curated list/.test(FUN.movieNight(MX, 'Beauty & Beast').problem), 'missing partner list is reported');
+const chaos = FUN.movieNight(MF, 'Chaos Pair');
+assert.ok(!chaos.one || !chaos.two || chaos.one.id !== chaos.two.id);
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);
