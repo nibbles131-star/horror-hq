@@ -1,0 +1,237 @@
+<script>
+/**
+ * Pure derivation logic shared by every screen: indexes, verdicts, counts,
+ * trophies, passport, franchise progress, search. No DOM in here, so the same
+ * code is unit-tested in Node (tools/logic_test.js).
+ */
+var HQ = (function () {
+  var VERDICTS = [
+    { min: 10, label: '👑 Obsession-tier', key: 'obsession' },
+    { min: 9, label: '🖤 Loved', key: 'loved' },
+    { min: 7, label: '🔥 Great', key: 'great' },
+    { min: 5, label: '👍 Good', key: 'good' },
+    { min: 3, label: '😬 Meh', key: 'meh' },
+    { min: 0, label: '💀 Nope', key: 'nope' }
+  ];
+
+  function verdict(r) {
+    if (r === null || r === undefined || r === '') return null;
+    for (var i = 0; i < VERDICTS.length; i++) if (Number(r) >= VERDICTS[i].min) return VERDICTS[i];
+    return null;
+  }
+
+  function normalise(s) {
+    return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  function decadeOf(y) { return y ? (Math.floor(y / 10) * 10) + 's' : ''; }
+
+  /** Builds the in-memory model from apiBootstrap() output. */
+  function build(raw) {
+    var M = { raw: raw, films: [], byId: {}, coll: {}, collList: [], entriesByColl: {}, entriesByFilm: {}, entryById: {} };
+    raw.films.forEach(function (f) {
+      var st = raw.state[f[0]] || ['Not watched', null, '', 1, ''];
+      var film = { id: f[0], key: f[1], title: f[2], year: f[3], poster: f[4],
+        status: st[0], rating: st[1], reaction: st[2] || '', version: st[3], modified: st[4],
+        countries: (raw.filmCountries[f[0]] || []).map(function (c) { return raw.countries[c]; }),
+        memory: raw.memory[f[0]] || null, special: raw.special[f[0]] || null, aliases: [] };
+      film.search = normalise(film.key) + ' ' + film.id.toLowerCase();
+      M.films.push(film);
+      M.byId[film.id] = film;
+    });
+    raw.aliases.forEach(function (a) {
+      var f = M.byId[a[0]];
+      if (f) { f.aliases.push({ key: a[1], status: a[2] }); f.search += ' ' + normalise(a[1]); }
+    });
+    raw.collections.forEach(function (c) {
+      M.coll[c.collection_id] = c;
+      M.collList.push(c);
+      M.entriesByColl[c.collection_id] = [];
+    });
+    M.collList.sort(function (a, b) { return a.sort_order - b.sort_order; });
+    raw.entries.forEach(function (e) {
+      var entry = { id: e[0], coll: e[1], film: e[2], slot: e[3], seq: e[4], sourceNote: e[5], contextNote: e[6] };
+      addEntry(M, entry);
+    });
+    sortEntries(M);
+    return M;
+  }
+
+  function addEntry(M, entry) {
+    M.entryById[entry.id] = entry;
+    (M.entriesByColl[entry.coll] = M.entriesByColl[entry.coll] || []).push(entry);
+    (M.entriesByFilm[entry.film] = M.entriesByFilm[entry.film] || []).push(entry);
+  }
+
+  function removeEntry(M, entryId) {
+    var e = M.entryById[entryId];
+    if (!e) return;
+    delete M.entryById[entryId];
+    M.entriesByColl[e.coll] = M.entriesByColl[e.coll].filter(function (x) { return x.id !== entryId; });
+    M.entriesByFilm[e.film] = (M.entriesByFilm[e.film] || []).filter(function (x) { return x.id !== entryId; });
+  }
+
+  function sortEntries(M) {
+    Object.keys(M.entriesByColl).forEach(function (k) {
+      M.entriesByColl[k].sort(function (a, b) { return a.seq - b.seq; });
+    });
+  }
+
+  function isListed(M, film) { return (M.entriesByFilm[film.id] || []).length > 0; }
+
+  function families(M, film) {
+    var out = {};
+    (M.entriesByFilm[film.id] || []).forEach(function (e) { out[M.coll[e.coll].family] = true; });
+    return out;
+  }
+
+  function listNames(M, film) {
+    var seen = {};
+    return (M.entriesByFilm[film.id] || []).map(function (e) { return M.coll[e.coll].name; })
+      .filter(function (n) { if (seen[n]) return false; seen[n] = true; return true; });
+  }
+
+  /** Headline numbers, matching the old Horror HQ definitions. */
+  function headline(M) {
+    var listed = M.films.filter(function (f) { return isListed(M, f); });
+    var watchedAll = M.films.filter(function (f) { return f.status === 'Watched'; });
+    var listedWatched = listed.filter(function (f) { return f.status === 'Watched'; });
+    var rated = M.films.filter(function (f) { return f.rating !== null && f.rating !== undefined; });
+    var sum = rated.reduce(function (s, f) { return s + Number(f.rating); }, 0);
+    var dist = { nope: 0, meh: 0, good: 0, great: 0, loved: 0, obsession: 0 };
+    rated.forEach(function (f) { dist[verdict(f.rating).key]++; });
+    return {
+      tracked: listed.length,
+      watched: watchedAll.length,
+      listedWatched: listedWatched.length,
+      listUnwatched: listed.filter(function (f) { return f.status === 'Not watched'; }).length,
+      listComplete: listed.length ? listedWatched.length / listed.length : 0,
+      rated: rated.length,
+      avg: rated.length ? sum / rated.length : null,
+      lovedPlus: dist.loved + dist.obsession,
+      dnf: M.films.filter(function (f) { return f.status === 'DNF'; }).length,
+      buried: M.films.filter(function (f) { return f.status === 'DNF'; }).length + (M.raw.burials || []).length,
+      dist: dist,
+      known: M.films.length
+    };
+  }
+
+  /** Watched films without a rating, most recently changed first. */
+  function rateNext(M) {
+    return M.films.filter(function (f) { return f.status === 'Watched' && (f.rating === null || f.rating === undefined); })
+      .sort(function (a, b) { return String(b.modified || '').localeCompare(String(a.modified || '')) || a.key.localeCompare(b.key); });
+  }
+
+  function passport(M) {
+    var countries = {}, decades = {};
+    M.films.forEach(function (f) {
+      if (f.status !== 'Watched') return;
+      f.countries.forEach(function (c) { countries[c] = (countries[c] || 0) + 1; });
+      if (f.year) decades[decadeOf(f.year)] = (decades[decadeOf(f.year)] || 0) + 1;
+    });
+    return { countries: countries, decades: decades };
+  }
+
+  function franchises(M) {
+    return M.collList.filter(function (c) { return c.family === 'Franchise'; }).map(function (c) {
+      var es = M.entriesByColl[c.collection_id] || [];
+      var watched = 0, unsure = 0, next = null;
+      es.forEach(function (e) {
+        var f = M.byId[e.film];
+        if (f.status === 'Watched') watched++;
+        else if (f.status === 'Unsure') unsure++;
+        if (!next && f.status === 'Not watched') next = f;
+      });
+      return { coll: c, total: es.length, watched: watched, unsure: unsure, next: next,
+        pct: es.length ? watched / es.length : 0 };
+    });
+  }
+
+  function bestiary(M) {
+    return M.collList.filter(function (c) { return c.family === 'Bestiary'; }).map(function (c) {
+      var es = M.entriesByColl[c.collection_id] || [];
+      var watched = es.filter(function (e) { return M.byId[e.film].status === 'Watched'; }).length;
+      return { coll: c, listed: es.length, watched: watched };
+    });
+  }
+
+  function tierFor(defs, value) {
+    var earned = null, next = null;
+    defs.forEach(function (d) {
+      if (value >= d.threshold) earned = d;
+      else if (!next) next = d;
+    });
+    return { earned: earned, next: next };
+  }
+
+  /** Trophy cabinet using the frozen definitions from the database. */
+  function trophies(M) {
+    var h = headline(M);
+    var p = passport(M);
+    var franchiseWatched = 0;
+    var bestiaryFilms = {};
+    Object.keys(M.entryById).forEach(function (id) {
+      var e = M.entryById[id];
+      var fam = M.coll[e.coll].family;
+      var f = M.byId[e.film];
+      if (f.status !== 'Watched') return;
+      if (fam === 'Franchise') franchiseWatched++;
+      if (fam === 'Bestiary') bestiaryFilms[f.id] = true;
+    });
+    var metrics = {
+      'Horror Devotee': h.watched,
+      'The Critic': h.rated,
+      'Taste Maker': h.lovedPlus,
+      'Passport Control': Object.keys(p.countries).length,
+      'Time Traveller': Object.keys(p.decades).length,
+      'Franchise Fiend': franchiseWatched,
+      'Beastmaster': Object.keys(bestiaryFilms).length
+    };
+    var defs = M.raw.trophies.slice().sort(function (a, b) { return a.sort_order - b.sort_order; });
+    var core = Object.keys(metrics).map(function (fam) {
+      var ladder = defs.filter(function (d) { return d.family === fam; });
+      var t = tierFor(ladder, metrics[fam]);
+      return { family: fam, metric: ladder[0] ? ladder[0].metric : '', value: metrics[fam], ladder: ladder, earned: t.earned, next: t.next };
+    });
+    var bLadder = defs.filter(function (d) { return d.family === 'Bestiary category'; });
+    var beasts = bestiary(M).map(function (b) {
+      var t = tierFor(bLadder, b.watched);
+      return { name: b.coll.name, icon: b.coll.icon, watched: b.watched, listed: b.listed, earned: t.earned, next: t.next };
+    });
+    var plat = defs.filter(function (d) { return d.family === 'Platinum'; })[0];
+    var coreGolds = core.filter(function (c) { return c.earned && c.earned.tier === 'Gold'; }).length;
+    var bestiaryGolds = beasts.filter(function (b) { return b.earned && b.earned.tier === 'Gold'; }).length;
+    return { core: core, bestiary: beasts, bestiaryLadder: bLadder,
+      platinum: { def: plat, coreGolds: coreGolds, bestiaryGolds: bestiaryGolds,
+        earned: coreGolds === core.length && bestiaryGolds >= (plat ? plat.threshold : 5) } };
+  }
+
+  /** Ranked search over title, aliases, year and film id. */
+  function search(M, query, films) {
+    var q = normalise(query);
+    var pool = films || M.films;
+    if (!q) return pool.slice();
+    var words = q.split(' ');
+    var hits = [];
+    pool.forEach(function (f) {
+      if (!words.every(function (w) { return f.search.indexOf(w) >= 0; })) return;
+      var t = normalise(f.title);
+      var score = t === q ? 0 : t.indexOf(q) === 0 ? 1 : (' ' + t).indexOf(' ' + words[0]) >= 0 ? 2 : 3;
+      hits.push({ f: f, s: score });
+    });
+    hits.sort(function (a, b) { return a.s - b.s || a.f.key.localeCompare(b.f.key); });
+    return hits.map(function (h) { return h.f; });
+  }
+
+  function isoToday() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+
+  return { VERDICTS: VERDICTS, verdict: verdict, normalise: normalise, decadeOf: decadeOf, build: build,
+    addEntry: addEntry, removeEntry: removeEntry, sortEntries: sortEntries, isListed: isListed, families: families,
+    listNames: listNames, headline: headline, rateNext: rateNext, passport: passport, franchises: franchises,
+    bestiary: bestiary, trophies: trophies, search: search, isoToday: isoToday };
+})();
+if (typeof module !== 'undefined') module.exports = HQ;
+</script>

@@ -3,42 +3,18 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
-  <style>
-    :root { --bg: #141213; --panel: #1d1a1b; --line: #2e2a2b; --text: #ece6e3; --muted: #9b928f; --blood: #a3262a; --ok: #6fae7c; }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    main { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
-    h1 { font-size: 34px; letter-spacing: .5px; margin: 0 0 4px; }
-    h1 span { color: var(--blood); }
-    p.sub { color: var(--muted); margin: 0 0 28px; }
-    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-    th { color: var(--muted); font-weight: 600; }
-    .ok { color: var(--ok); } .bad { color: #e0777a; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Horror HQ</title>
+  <?!= include('Styles') ?>
 </head>
 <body>
-<main>
-  <h1>HORROR <span>HQ</span></h1>
-  <p class="sub">Under construction. The data has moved in; the furniture arrives next. 🔨💀</p>
-  <div class="panel" id="report">Checking the crypt…</div>
-</main>
-<script>
-  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  google.script.run.withSuccessHandler(function (res) {
-    var el = document.getElementById('report');
-    if (!res.report) { el.textContent = res.error || 'No migration has been run yet.'; return; }
-    var r = res.report;
-    var html = '<p><b>' + r.passed + '</b> checks match the old sheet, <b>' + r.failed + '</b> differ. Exceptions: ' +
-      r.exceptions.error + ' errors, ' + r.exceptions.warning + ' warnings, ' + r.exceptions.info + ' info.</p>' +
-      '<table><tr><th>Check</th><th>Old sheet</th><th>Migrated</th><th></th></tr>';
-    r.checks.forEach(function (c) {
-      html += '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.legacy) + '</td><td>' + esc(c.migrated) + '</td><td class="' +
-        (c.pass ? 'ok">✔' : 'bad">✘') + '</td></tr>';
-    });
-    el.innerHTML = html + '</table>';
-  }).apiMigrationStatus();
-</script>
+  <div class="app">
+    <nav id="nav"></nav>
+    <main id="main"><div class="loading">Opening the crypt…</div></main>
+  </div>
+  <div id="drawer"></div>
+  <div class="toasts" id="toasts"></div>
+  <?!= include('Logic') ?>
+  <?!= include('App') ?>
 </body>
 </html>

@@ -1,0 +1,532 @@
+<script>
+/* Horror HQ web app: navigation, Home, Film Library and the film profile drawer. */
+var App = (function () {
+  var M = null;
+  var view = 'home';
+  var drawerId = null;
+  var lib = { q: '', status: '', rated: '', family: '', coll: '', decade: '', country: '', discovery: '', unlisted: false, sort: 'key', dir: 1, page: 0 };
+  var victim = null;
+  var PAGE = 100;
+
+  var SECTIONS = [
+    { id: 'home', icon: '🏠', label: 'Horror HQ' },
+    { id: 'library', icon: '🎞️', label: 'Film Library' },
+    { id: 'collections', icon: '📚', label: 'Collections' },
+    { id: 'planner', icon: '📅', label: 'Watch Planner' },
+    { id: 'excavator', icon: '🔎', label: 'Horror Excavator' },
+    { id: 'funhouse', icon: '🎰', label: 'The Funhouse' },
+    { id: 'stats', icon: '🏆', label: 'Stats + Trophies' }
+  ];
+
+  // ------------------------------------------------------------------ helpers
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) { reject(e); });
+      r[fn].apply(r, args);
+    });
+  }
+  function toast(msg, kind, action) {
+    var box = $('#toasts');
+    var el = document.createElement('div');
+    el.className = 'toast ' + (kind || '');
+    el.innerHTML = esc(msg) + (action ? ' <button class="btn">' + esc(action.label) + '</button>' : '');
+    if (action) el.querySelector('button').onclick = function () { el.remove(); action.fn(); };
+    box.appendChild(el);
+    setTimeout(function () { el.remove(); }, action ? 8000 : 3500);
+  }
+  function statusChip(s) {
+    return '<span class="status ' + esc(String(s).split(' ')[0]) + '">' + esc(s) + '</span>';
+  }
+  function ratingCell(f) {
+    if (f.rating === null || f.rating === undefined) return '<span class="faint">—</span>';
+    return '<b>' + f.rating + '</b> <span class="muted small">' + esc(HQ.verdict(f.rating).label) + '</span>';
+  }
+  function filmLink(f, label) {
+    return '<a class="film-link" data-film="' + esc(f.id) + '">' + esc(label || f.key) + '</a>';
+  }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+  }
+  function pct(x) { return Math.round(x * 1000) / 10 + '%'; }
+  function pick(arr) { return arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
+
+  // ------------------------------------------------------------------ shell
+  function renderNav() {
+    var rn = HQ.rateNext(M).length;
+    $('#nav').innerHTML = '<div class="brand">HORROR <span>HQ</span></div>' + SECTIONS.map(function (s) {
+      var badge = s.id === 'home' && (M.raw.openExceptions || rn) ? '<span class="badge">' + rn + '</span>' : '';
+      return '<button data-nav="' + s.id + '" class="' + (view === s.id ? 'on' : '') + '">' + s.icon + ' ' + esc(s.label) + badge + '</button>';
+    }).join('') + '<div class="foot">' + M.films.length + ' films known<br>build ' + esc(M.raw.version) + '</div>';
+  }
+
+  function topBar(title, sub) {
+    return '<div class="top"><div><h1>' + esc(title) + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' +
+      '<div class="grow"></div><div class="search"><input id="gsearch" placeholder="Find any film, alias or year" autocomplete="off"><kbd>/</kbd>' +
+      '<div class="suggest" id="suggest" hidden></div></div></div>';
+  }
+
+  function render() {
+    renderNav();
+    var html;
+    if (view === 'home') html = renderHome();
+    else if (view === 'library') html = renderLibrary();
+    else html = renderSoon();
+    $('#main').innerHTML = html;
+    if (drawerId) renderDrawer();
+  }
+
+  function go(v) {
+    view = v;
+    window.scrollTo(0, 0);
+    render();
+  }
+
+  // ------------------------------------------------------------------ home
+  function renderHome() {
+    var h = HQ.headline(M);
+    var today = HQ.isoToday();
+    var soon = M.raw.agenda.filter(function (a) { return a.planned_date >= today; })
+      .sort(function (a, b) { return a.planned_date.localeCompare(b.planned_date) || a.sort_order - b.sort_order; }).slice(0, 7);
+    var missed = M.raw.agenda.filter(function (a) {
+      var f = M.byId[a.film_id];
+      return a.planned_date < today && f && f.status === 'Not watched';
+    });
+    var rn = HQ.rateNext(M);
+    var top = M.films.filter(function (f) { return f.rating !== null && f.rating !== undefined; })
+      .sort(function (a, b) { return b.rating - a.rating || a.key.localeCompare(b.key); }).slice(0, 5);
+    var fr = HQ.franchises(M).filter(function (x) { return x.pct < 1 && x.watched > 0; })
+      .sort(function (a, b) { return b.pct - a.pct; }).slice(0, 4);
+    if (!victim || victim.status !== 'Not watched') rerollVictim();
+    var alerts = M.films.filter(function (f) { return f.aliases.some(function (a) { return /review/.test(a.status); }); });
+
+    var stats = [['Tracked', h.tracked], ['All watched', h.watched], ['List unwatched', h.listUnwatched],
+      ['List complete', pct(h.listComplete)], ['Avg rating', h.avg === null ? '—' : (Math.round(h.avg * 10) / 10) + '/10'],
+      ['🖤 + 👑', h.lovedPlus], ['Buried', h.buried]];
+
+    var distMax = Math.max.apply(null, Object.keys(h.dist).map(function (k) { return h.dist[k]; }).concat([1]));
+    var dist = HQ.VERDICTS.slice().reverse().map(function (v) {
+      var n = h.dist[v.key];
+      return '<div class="row"><span style="width:150px">' + esc(v.label) + '</span><div class="grow bar"><i style="width:' + (n / distMax * 100) + '%"></i></div><b style="width:28px;text-align:right">' + n + '</b></div>';
+    }).join('');
+
+    return topBar('Horror HQ', 'Everything that matters tonight, nothing that needs a spreadsheet séance. 💀') +
+      '<div class="stats">' + stats.map(function (s) { return '<div class="stat"><span>' + esc(s[0]) + '</span><b>' + esc(s[1]) + '</b></div>'; }).join('') + '</div>' +
+      '<div class="grid g3">' +
+        '<div class="panel"><h2>📅 Coming up</h2>' +
+          (soon.length ? soon.map(function (a) {
+            var f = M.byId[a.film_id];
+            return '<div class="row"><span class="muted small" style="width:92px">' + esc(fmtDate(a.planned_date)) + '</span><span class="t">' +
+              (f ? filmLink(f) : esc(a.raw_film)) + '<br><span class="faint small">' + esc(a.occasion) + '</span></span>' + (f ? statusChip(f.status) : '') + '</div>';
+          }).join('') : '<div class="empty">Nothing scheduled. Suspiciously calm.</div>') +
+          (missed.length ? '<div class="small muted" style="margin-top:10px">⏰ ' + missed.length + ' scheduled films have slipped past their date unwatched.</div>' : '') +
+        '</div>' +
+        '<div class="panel"><h2>⭐ Rate these next <span class="act muted">' + rn.length + ' waiting</span></h2>' +
+          (rn.length ? rn.slice(0, 7).map(function (f) {
+            return '<div class="row"><span class="t">' + filmLink(f) + '</span><button class="btn" data-quickrate="' + esc(f.id) + '">Rate</button></div>';
+          }).join('') : '<div class="empty">Every watched film has a rating. Who are you?</div>') +
+          (rn.length > 7 ? '<div style="margin-top:10px"><button class="btn ghost" data-libpreset="ratenext">See all ' + rn.length + ' →</button></div>' : '') +
+        '</div>' +
+        '<div class="panel"><h2>🎰 Tonight\'s victim</h2>' +
+          (victim ? '<div class="victim">' + filmLink(victim) + '</div><div class="chips" style="margin-bottom:14px">' +
+            HQ.listNames(M, victim).slice(0, 4).map(function (n) { return '<span class="chip">' + esc(n) + '</span>'; }).join('') + '</div>' +
+            '<button class="btn primary" data-reroll>Reroll fate</button> <button class="btn" data-film="' + esc(victim.id) + '">Open</button>'
+            : '<div class="empty">Nothing unwatched. Impossible.</div>') +
+          '<div class="small faint" style="margin-top:12px">Pool: all unwatched listed films. Rerolling never changes your data.</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="grid g3" style="margin-top:16px">' +
+        '<div class="panel"><h2>📊 Verdicts</h2>' + dist + '</div>' +
+        '<div class="panel"><h2>🔪 Closest to the finish</h2>' +
+          (fr.length ? fr.map(function (x) {
+            return '<div class="row"><span class="t"><b>' + esc(x.coll.name) + '</b> <span class="muted small">' + x.watched + '/' + x.total + '</span><br>' +
+              '<span class="small faint">Next: ' + (x.next ? filmLink(x.next) : 'nothing left') + '</span></span><span>' + pct(x.pct) + '</span></div>';
+          }).join('') : '<div class="empty">No franchise in progress.</div>') +
+        '</div>' +
+        '<div class="panel"><h2>🏅 Top-rated watches</h2>' +
+          (top.length ? top.map(function (f) { return '<div class="row"><span class="t">' + filmLink(f) + '</span>' + ratingCell(f) + '</div>'; }).join('')
+            : '<div class="empty">No ratings yet.</div>') +
+        '</div>' +
+      '</div>' +
+      '<div class="panel" style="margin-top:16px"><h2>🚨 Needs attention</h2>' +
+        (alerts.length ? alerts.map(function (f) {
+          return '<div class="row"><span class="t">' + filmLink(f) + ' <span class="muted small">possible duplicate of ' +
+            esc(f.aliases.map(function (a) { return a.key; }).join(', ')) + '</span></span><span class="small faint">review, never auto-merged</span></div>';
+        }).join('') : '') +
+        (M.raw.openExceptions ? '<div class="row"><span class="t">' + M.raw.openExceptions + ' migration notes to review</span><span class="small faint">Migration Report tab</span></div>' : '') +
+        (!alerts.length && !M.raw.openExceptions ? '<div class="empty">All quiet. Too quiet.</div>' : '') +
+      '</div>';
+  }
+
+  function rerollVictim() {
+    var pool = M.films.filter(function (f) { return f.status === 'Not watched' && HQ.isListed(M, f); });
+    var prev = victim;
+    victim = pick(pool);
+    if (pool.length > 1 && prev && victim && victim.id === prev.id) victim = pick(pool);
+  }
+
+  // ------------------------------------------------------------------ library
+  function libraryRows() {
+    var rows = HQ.search(M, lib.q);
+    return rows.filter(function (f) {
+      if (lib.status && f.status !== lib.status) return false;
+      if (lib.rated === 'rated' && (f.rating === null || f.rating === undefined)) return false;
+      if (lib.rated === 'unrated' && f.rating !== null && f.rating !== undefined) return false;
+      if (lib.rated === 'ratenext' && !(f.status === 'Watched' && (f.rating === null || f.rating === undefined))) return false;
+      if (lib.rated === 'loved' && !(f.rating >= 9)) return false;
+      if (lib.family && !HQ.families(M, f)[lib.family]) return false;
+      if (lib.coll && !(M.entriesByFilm[f.id] || []).some(function (e) { return e.coll === lib.coll; })) return false;
+      if (lib.decade && HQ.decadeOf(f.year) !== lib.decade) return false;
+      if (lib.country && f.countries.indexOf(lib.country) < 0) return false;
+      if (lib.discovery && !(f.memory && f.memory[0] === lib.discovery)) return false;
+      if (lib.unlisted && HQ.isListed(M, f)) return false;
+      return true;
+    }).sort(function (a, b) {
+      var d = lib.dir;
+      if (lib.sort === 'rating') return d * ((b.rating || 0) - (a.rating || 0)) || a.key.localeCompare(b.key);
+      if (lib.sort === 'year') return d * ((a.year || 0) - (b.year || 0)) || a.key.localeCompare(b.key);
+      if (lib.sort === 'status') return d * a.status.localeCompare(b.status) || a.key.localeCompare(b.key);
+      return lib.q ? 0 : d * a.key.localeCompare(b.key);
+    });
+  }
+
+  function options(values, current, blankLabel) {
+    return '<option value="">' + esc(blankLabel) + '</option>' + values.map(function (v) {
+      var val = Array.isArray(v) ? v[0] : v, label = Array.isArray(v) ? v[1] : v;
+      return '<option value="' + esc(val) + '"' + (String(current) === String(val) ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+  }
+
+  function renderLibrary() {
+    var rows = libraryRows();
+    var pages = Math.max(1, Math.ceil(rows.length / PAGE));
+    lib.page = Math.min(lib.page, pages - 1);
+    var slice = rows.slice(lib.page * PAGE, lib.page * PAGE + PAGE);
+    var decades = {}, countries = {};
+    M.films.forEach(function (f) { if (f.year) decades[HQ.decadeOf(f.year)] = 1; f.countries.forEach(function (c) { countries[c] = 1; }); });
+    var fams = ['Yearly', 'Seasonal', 'Curated', 'Classics', 'Bestiary', 'Alphabet', 'Franchise', 'Bubblegum'];
+    var colls = M.collList.filter(function (c) { return !lib.family || c.family === lib.family; })
+      .map(function (c) { return [c.collection_id, (lib.family ? '' : c.family + ' • ') + c.name]; });
+    var arrow = function (k) { return lib.sort === k ? (lib.dir > 0 ? ' ▲' : ' ▼') : ''; };
+
+    return topBar('Film Library', 'Every film the machine knows: listed, watched, discovered, rejected or lurking. 🧠') +
+      '<div class="panel">' +
+      '<div class="toolbar">' +
+        '<input class="input" id="libq" placeholder="Filter by title, alias, year or ID" value="' + esc(lib.q) + '" style="width:280px">' +
+        '<select data-lib="status">' + options(['Not watched', 'Watched', 'DNF', 'Unsure'], lib.status, 'Any status') + '</select>' +
+        '<select data-lib="rated">' + options([['rated', 'Rated'], ['unrated', 'Unrated'], ['ratenext', 'Watched, unrated'], ['loved', '🖤 9+']], lib.rated, 'Any rating') + '</select>' +
+        '<select data-lib="family">' + options(fams, lib.family, 'Any family') + '</select>' +
+        '<select data-lib="coll">' + options(colls, lib.coll, 'Any list') + '</select>' +
+        '<select data-lib="decade">' + options(Object.keys(decades).sort(), lib.decade, 'Any decade') + '</select>' +
+        '<select data-lib="country">' + options(Object.keys(countries).sort(), lib.country, 'Any country') + '</select>' +
+        '<select data-lib="discovery">' + options(['🔎 Candidate', '👀 Maybe', '🚫 Rejected', '👁️ Seen / unlisted', '✅ Approved'], lib.discovery, 'Any discovery state') + '</select>' +
+        '<label class="small muted"><input type="checkbox" data-lib="unlisted"' + (lib.unlisted ? ' checked' : '') + '> Not on any list</label>' +
+        '<span class="grow"></span><button class="btn ghost" data-libclear>Clear</button><button class="btn" data-addfilm>+ Add film</button>' +
+      '</div>' +
+      '<div class="muted small" style="margin-bottom:8px">' + rows.length + ' films</div>' +
+      (slice.length ? '<table><thead><tr><th data-sort="key">Film' + arrow('key') + '</th><th data-sort="year">Year' + arrow('year') + '</th>' +
+        '<th data-sort="status">Status' + arrow('status') + '</th><th data-sort="rating">Rating' + arrow('rating') + '</th><th>Lists</th><th>Country</th></tr></thead><tbody>' +
+        slice.map(function (f) {
+          var names = HQ.listNames(M, f);
+          return '<tr class="click" data-film="' + esc(f.id) + '"><td>' + esc(f.title) +
+            (f.memory && f.memory[0] ? ' <span class="small faint">' + esc(f.memory[0]) + '</span>' : '') + '</td><td>' + esc(f.year || '') + '</td><td>' +
+            statusChip(f.status) + '</td><td>' + ratingCell(f) + '</td><td class="small muted">' + esc(names.slice(0, 3).join(' • ')) +
+            (names.length > 3 ? ' +' + (names.length - 3) : '') + '</td><td class="small muted">' + esc(f.countries.join(', ')) + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">No films match. Loosen a filter.</div>') +
+      (pages > 1 ? '<div class="pager">Page ' + (lib.page + 1) + ' of ' + pages + ' <button class="btn" data-page="-1"' + (lib.page ? '' : ' disabled') +
+        '>←</button><button class="btn" data-page="1"' + (lib.page < pages - 1 ? '' : ' disabled') + '>→</button></div>' : '') +
+      '</div>';
+  }
+
+  // ------------------------------------------------------------------ placeholder sections
+  function renderSoon() {
+    var s = SECTIONS.filter(function (x) { return x.id === view; })[0];
+    var notes = {
+      collections: 'Yearly, Seasonal, Curated, Classics, all 15 Bestiary families, Alphabet, Franchises and Bubblegum, with progress and safe reordering.',
+      planner: 'Agenda, calendar, countdowns and the Challenge Builder.',
+      excavator: 'Hunt builder, the Arnold request, candidate inbox and the full discovery archive.',
+      funhouse: 'Slot Machine with every pool, and all five Movie Night modes.',
+      stats: 'Trophy cabinet, Taste DNA, Passport, Franchise Dashboard, Graveyard and the Horror Awards.'
+    };
+    return topBar(s.label) + '<div class="panel soon"><b>' + s.icon + '</b>Being built next.<br><span class="small">' + esc(notes[view] || '') + '</span></div>';
+  }
+
+  // ------------------------------------------------------------------ film drawer
+  function openFilm(id) {
+    drawerId = id;
+    renderDrawer();
+  }
+  function closeDrawer() {
+    drawerId = null;
+    $('#drawer').innerHTML = '';
+  }
+
+  function renderDrawer() {
+    var f = M.byId[drawerId];
+    if (!f) return closeDrawer();
+    var fams = HQ.families(M, f);
+    var statuses = ['Not watched', 'Watched', 'DNF'].concat(fams.Franchise || f.status === 'Unsure' ? ['Unsure'] : []);
+    var v = HQ.verdict(f.rating);
+    var entries = (M.entriesByFilm[f.id] || []).slice().sort(function (a, b) {
+      return M.coll[a.coll].sort_order - M.coll[b.coll].sort_order;
+    });
+    var agenda = M.raw.agenda.filter(function (a) { return a.film_id === f.id; });
+    var poster = f.poster ? '<img class="poster" src="' + esc(f.poster) + '" alt="">' : '<div class="poster">🎞️</div>';
+    var bubble = fams.Bubblegum;
+
+    var franchise = entries.filter(function (e) { return M.coll[e.coll].family === 'Franchise'; }).map(function (e) {
+      return '<div class="small" style="margin-bottom:8px"><b>' + esc(M.coll[e.coll].name) + '</b>: ' + M.entriesByColl[e.coll].map(function (x) {
+        var g = M.byId[x.film];
+        var me = x.film === f.id;
+        return (me ? '<b>' : '') + filmLink(g, (g.status === 'Watched' ? '✓ ' : '') + g.title) + (me ? '</b>' : '');
+      }).join(' → ') + '</div>';
+    }).join('');
+
+    var addOptions = M.collList.map(function (c) { return [c.collection_id, c.family + ' • ' + c.name]; });
+
+    $('#drawer').innerHTML = '<div class="scrim" data-close></div><div class="drawer">' +
+      '<button class="btn ghost close" data-close>✕</button>' +
+      '<div style="display:flex;gap:16px">' + poster + '<div><h1>' + esc(f.title) + '</h1>' +
+        '<div class="muted">' + esc(f.year || 'Year unknown') + ' • <span class="faint">' + esc(f.id) + '</span></div>' +
+        '<div class="chips" style="margin-top:10px">' + f.countries.map(function (c) { return '<span class="chip">' + esc(c) + '</span>'; }).join('') + '</div>' +
+        (v ? '<div style="margin-top:10px;font-size:16px">' + esc(v.label) + '</div>' : '') +
+      '</div></div>' +
+
+      '<h3>Status</h3><div class="seg">' + statuses.map(function (s) {
+        return '<button data-setstatus="' + esc(s) + '" class="' + (f.status === s ? 'on' : '') + '">' + esc(s) + '</button>';
+      }).join('') + '</div>' +
+
+      '<h3>Rating /10</h3><div class="stars">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (n) {
+        return '<button data-setrating="' + n + '" class="' + (f.rating === n ? 'on' : '') + '">' + n + '</button>';
+      }).join('') + (f.rating !== null && f.rating !== undefined ? '<button data-setrating="" title="Clear rating">✕</button>' : '') + '</div>' +
+      (f.status !== 'Watched' && f.rating === null ? '' : '') +
+
+      (bubble ? '<h3>💅🏻 Cuntometer /5 <span class="faint" style="text-transform:none">separate from the /10, always</span></h3><div class="stars">' + [1, 2, 3, 4, 5].map(function (n) {
+        return '<button data-setcunt="' + n + '" class="' + (f.special && f.special[0] === n ? 'on' : '') + '">' + n + '</button>';
+      }).join('') + '</div>' : '') +
+
+      '<h3>Your reaction</h3><textarea class="input" id="reaction" placeholder="What did it do to you?">' + esc(f.reaction) + '</textarea>' +
+      '<div style="margin-top:8px"><button class="btn primary" data-savereaction>Save reaction</button></div>' +
+
+      '<h3>On ' + entries.length + ' list' + (entries.length === 1 ? '' : 's') + '</h3>' +
+      (entries.length ? entries.map(function (e) {
+        var c = M.coll[e.coll];
+        return '<div class="row"><span class="t">' + esc(c.icon) + ' ' + esc(c.family) + ' • <b>' + esc(c.name) + '</b>' +
+          (e.slot ? ' <span class="muted small">slot ' + esc(e.slot) + '</span>' : '') +
+          (e.sourceNote ? '<br><span class="small faint">' + esc(e.sourceNote) + '</span>' : '') + '</span>' +
+          '<button class="btn ghost small" data-removeentry="' + esc(e.id) + '">Remove</button></div>';
+      }).join('') : '<div class="muted small">Not on any list' + (f.status === 'Watched' ? ' (seen / unlisted)' : '') + '.</div>') +
+      '<div class="toolbar" style="margin-top:10px"><select id="addcoll" style="max-width:300px">' + options(addOptions, '', 'Add to a list…') + '</select>' +
+        '<input class="input" id="addslot" placeholder="Slot (optional)" style="width:120px"><button class="btn" data-addentry>Add</button></div>' +
+
+      (franchise ? '<h3>Franchise order</h3>' + franchise : '') +
+
+      (agenda.length ? '<h3>Scheduled</h3>' + agenda.map(function (a) {
+        return '<div class="row"><span class="muted small" style="width:92px">' + esc(fmtDate(a.planned_date)) + '</span><span class="t">' + esc(a.occasion) +
+          '<br><span class="small faint">' + esc(a.context_note) + '</span></span></div>';
+      }).join('') : '') +
+
+      (f.memory ? '<h3>Discovery memory</h3><div class="small"><b>' + esc(f.memory[0] || '—') + '</b>' +
+        (f.memory[1] ? ' • ' + esc(f.memory[1]) : '') + '<br><span class="muted">Origin: ' + esc(f.memory[2] || '—') +
+        (f.memory[5] ? ' • added ' + esc(f.memory[5]) : '') + '</span>' +
+        (f.memory[3] ? '<br>' + esc(f.memory[3]) : '') +
+        (f.memory[4] ? '<br><span class="faint">' + esc(f.memory[4]) + '</span>' : '') + '</div>' : '') +
+
+      (f.aliases.length ? '<h3>Also known as</h3><div class="chips">' + f.aliases.map(function (a) {
+        return '<span class="chip">' + esc(a.key) + (/review/.test(a.status) ? ' ⚠️' : '') + '</span>';
+      }).join('') + '</div>' : '') +
+      '</div>';
+  }
+
+  // ------------------------------------------------------------------ saving
+  function applyState(f, s) {
+    f.status = s.viewing_status;
+    f.rating = s.rating_10;
+    f.reaction = s.reaction || '';
+    f.version = s.version;
+    f.modified = s.modified_at;
+  }
+
+  function saveState(f, patch, label) {
+    var before = { viewing_status: f.status, rating_10: f.rating, reaction: f.reaction };
+    var optimistic = { viewing_status: f.status, rating_10: f.rating, reaction: f.reaction, version: f.version, modified_at: new Date().toISOString() };
+    Object.keys(patch).forEach(function (k) { optimistic[k] = patch[k]; });
+    var version = f.version;
+    applyState(f, optimistic);
+    f.version = version;
+    render();
+    return call('apiSaveFilmState', f.id, patch, version).then(function (res) {
+      applyState(f, res.state);
+      if (res.conflict) {
+        toast('That film was changed elsewhere, so I reloaded it. Check and try again.', 'bad');
+      } else {
+        toast(label + ' • ' + f.title, 'ok', { label: 'Undo', fn: function () {
+          var undo = {};
+          Object.keys(patch).forEach(function (k) { undo[k] = before[k]; });
+          saveState(f, undo, 'Undone');
+        } });
+      }
+      render();
+    }).catch(function (e) {
+      applyState(f, { viewing_status: before.viewing_status, rating_10: before.rating_10, reaction: before.reaction, version: version, modified_at: f.modified });
+      render();
+      toast('Not saved: ' + (e && e.message ? e.message : e), 'bad');
+    });
+  }
+
+  // ------------------------------------------------------------------ events
+  function onClick(ev) {
+    var t = ev.target.closest('[data-nav],[data-film],[data-close],[data-setstatus],[data-setrating],[data-setcunt],[data-savereaction],' +
+      '[data-reroll],[data-quickrate],[data-libpreset],[data-sort],[data-page],[data-libclear],[data-removeentry],[data-addentry],[data-addfilm],[data-suggest]');
+    if (!t) return;
+    var d = t.dataset;
+    var f = drawerId ? M.byId[drawerId] : null;
+    if (d.nav) return go(d.nav);
+    if (d.suggest) { $('#suggest').hidden = true; return openFilm(d.suggest); }
+    if (d.film) return openFilm(d.film);
+    if (d.quickrate) return openFilm(d.quickrate);
+    if (d.close !== undefined) return closeDrawer();
+    if (d.reroll !== undefined) { rerollVictim(); return render(); }
+    if (d.libpreset) { lib = Object.assign(lib, { rated: d.libpreset, page: 0 }); return go('library'); }
+    if (d.sort) { lib.dir = lib.sort === d.sort ? -lib.dir : 1; lib.sort = d.sort; return render(); }
+    if (d.page) { lib.page += Number(d.page); return render(); }
+    if (d.libclear !== undefined) { lib = { q: '', status: '', rated: '', family: '', coll: '', decade: '', country: '', discovery: '', unlisted: false, sort: 'key', dir: 1, page: 0 }; return render(); }
+    if (d.addfilm !== undefined) return addFilmPrompt();
+    if (!f) return;
+    if (d.setstatus) {
+      var patch = { viewing_status: d.setstatus };
+      return saveState(f, patch, 'Marked ' + d.setstatus);
+    }
+    if (d.setrating !== undefined) {
+      var r = d.setrating === '' ? null : Number(d.setrating);
+      var p = { rating_10: r };
+      if (r !== null && f.status === 'Not watched') p.viewing_status = 'Watched';
+      return saveState(f, p, r === null ? 'Rating cleared' : 'Rated ' + r + '/10');
+    }
+    if (d.savereaction !== undefined) return saveState(f, { reaction: $('#reaction').value }, 'Reaction saved');
+    if (d.setcunt) {
+      var v = Number(d.setcunt);
+      var note = f.special ? f.special[1] : '';
+      return call('apiSaveCuntometer', f.id, v, note).then(function () {
+        f.special = [v, note]; render(); toast('Cuntometer ' + v + '/5 💅🏻', 'ok');
+      }).catch(function (e) { toast('Not saved: ' + e.message, 'bad'); });
+    }
+    if (d.removeentry) {
+      var e = M.entryById[d.removeentry];
+      var c = M.coll[e.coll];
+      if (!confirm('Remove ' + f.title + ' from ' + c.name + '? Its rating and other lists stay as they are.')) return;
+      return call('apiRemoveEntry', e.id).then(function () {
+        HQ.removeEntry(M, e.id); render(); toast('Removed from ' + c.name, 'ok');
+      }).catch(function (err) { toast('Not removed: ' + err.message, 'bad'); });
+    }
+    if (d.addentry !== undefined) {
+      var cid = $('#addcoll').value;
+      if (!cid) return toast('Pick a list first.', 'bad');
+      return call('apiAddEntry', cid, f.id, $('#addslot').value, '', false).then(function (rec) {
+        HQ.addEntry(M, { id: rec.entry_id, coll: rec.collection_id, film: rec.film_id, slot: rec.slot_label, seq: rec.sequence, sourceNote: '', contextNote: '' });
+        HQ.sortEntries(M); render(); toast('Added to ' + M.coll[cid].name, 'ok');
+      }).catch(function (err) { toast(err.message, 'bad'); });
+    }
+  }
+
+  function addFilmPrompt() {
+    var title = prompt('Film title (without the year):');
+    if (!title) return;
+    var year = prompt('Release year for ' + title + ':');
+    if (!year) return;
+    call('apiAddFilm', title, Number(year), false).then(function (res) {
+      if (!res.created) {
+        toast('Already known (' + res.via + '): ' + res.film.display_key, 'ok');
+        return openFilm(res.film.film_id);
+      }
+      var f = { id: res.film.film_id, key: res.film.display_key, title: res.film.title, year: res.film.release_year, poster: '',
+        status: 'Not watched', rating: null, reaction: '', version: 1, modified: res.state.modified_at, countries: [], memory: null, special: null, aliases: [] };
+      f.search = HQ.normalise(f.key) + ' ' + f.id.toLowerCase();
+      M.films.push(f); M.byId[f.id] = f;
+      toast('Added ' + f.key, 'ok');
+      openFilm(f.id);
+      render();
+    }).catch(function (e) { toast(e.message, 'bad'); });
+  }
+
+  function onInput(ev) {
+    var t = ev.target;
+    if (t.id === 'libq') {
+      lib.q = t.value; lib.page = 0;
+      var pos = t.selectionStart;
+      render();
+      var again = $('#libq'); again.focus(); again.setSelectionRange(pos, pos);
+      return;
+    }
+    if (t.id === 'gsearch') return suggest(t.value);
+  }
+
+  function onChange(ev) {
+    var k = ev.target.dataset.lib;
+    if (!k) return;
+    lib[k] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
+    if (k === 'family') lib.coll = '';
+    lib.page = 0;
+    render();
+  }
+
+  var sugIndex = 0;
+  function suggest(q) {
+    var box = $('#suggest');
+    if (!q.trim()) { box.hidden = true; return; }
+    var hits = HQ.search(M, q).slice(0, 10);
+    sugIndex = 0;
+    box.hidden = false;
+    box.innerHTML = hits.length ? hits.map(function (f, i) {
+      return '<div data-suggest="' + esc(f.id) + '" class="' + (i === 0 ? 'on' : '') + '"><span class="t">' + esc(f.key) + '</span>' + statusChip(f.status) + '</div>';
+    }).join('') : '<div class="muted">No match. Add it from the Film Library.</div>';
+  }
+
+  function onKey(ev) {
+    var tag = (ev.target.tagName || '').toLowerCase();
+    if (ev.key === '/' && tag !== 'input' && tag !== 'textarea') { ev.preventDefault(); var g = $('#gsearch'); if (g) g.focus(); return; }
+    if (ev.key === 'Escape') { if (drawerId) closeDrawer(); var b = $('#suggest'); if (b) b.hidden = true; return; }
+    if (ev.target.id === 'gsearch') {
+      var items = document.querySelectorAll('#suggest [data-suggest]');
+      if (!items.length) return;
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        items[sugIndex].classList.remove('on');
+        sugIndex = (sugIndex + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items[sugIndex].classList.add('on');
+      }
+      if (ev.key === 'Enter') { $('#suggest').hidden = true; openFilm(items[sugIndex].dataset.suggest); }
+    }
+  }
+
+  function start() {
+    document.addEventListener('click', onClick);
+    document.addEventListener('input', onInput);
+    document.addEventListener('change', onChange);
+    document.addEventListener('keydown', onKey);
+    call('apiBootstrap').then(function (raw) {
+      if (raw.needsMigration) {
+        $('#main').innerHTML = '<div class="loading"><div style="text-align:center"><b style="font-size:40px">⚰️</b><br>The crypt is empty.' +
+          '<br><span class="small">Open the Horror HQ Database sheet and choose 🎃 Horror HQ → Run migration. Then reload this page.</span></div></div>';
+        return;
+      }
+      M = HQ.build(raw);
+      render();
+    }).catch(function (e) {
+      $('#main').innerHTML = '<div class="loading">Couldn\'t open the crypt: ' + esc(e && e.message ? e.message : e) +
+        '<br><span class="small">If the migration hasn\'t been run yet, run it from the 🎃 Horror HQ menu in the database sheet.</span></div>';
+    });
+  }
+
+  return { start: start };
+})();
+App.start();
+</script>
