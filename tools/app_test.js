@@ -133,4 +133,33 @@ const again = HQ.build(run('apiBootstrap()'));
 assert.strictEqual(again.films.length, 13);
 assert.strictEqual(again.byId[rec.id].rating, 8);
 
+// Collections section.
+const viewSrc = fs.readFileSync(path.join(SRC, 'ViewCollections.html'), 'utf8');
+const collMod = { exports: {} };
+new Function('module', 'HQ', viewSrc.match(/<script>([\s\S]*?)<\/script>/)[1])(collMod, HQ);
+const CL = collMod.exports;
+assert.strictEqual(CL.franchiseState(0, 4, 0), 'Not started');
+assert.strictEqual(CL.franchiseState(5, 6, 0), 'Nearly complete', 'Evil Dead 5/6 in the old sheet');
+assert.strictEqual(CL.franchiseState(6, 9, 0), 'In progress', 'Alien 6/9 in the old sheet');
+assert.strictEqual(CL.franchiseState(4, 4, 0), 'Complete');
+assert.strictEqual(CL.franchiseState(1, 4, 1), 'Needs review');
+const M2 = HQ.build(run('apiBootstrap()'));
+const ham = M2.collList.find(c => c.name === 'Hammer');
+const hp = CL.progress(M2, ham.collection_id);
+assert.strictEqual(hp.total, 2);
+assert.strictEqual(hp.watched, 1);
+assert.strictEqual(hp.next.key, 'Die Die Darling! (1965)');
+assert.strictEqual(CL.bestiaryTier(M2, 0), null);
+assert.strictEqual(CL.bestiaryTier(M2, 5), 'Silver');
+assert.strictEqual(CL.bestiaryTier(M2, 12), 'Gold');
+const fam = CL.familyProgress(M2, 'Classics');
+assert.strictEqual(fam.lists, 5, 'all five studios exist even when empty');
+assert.throws(() => vm.runInContext(`apiCreateCollection('Bestiary', 'Robots')`, ctx), /locked/);
+assert.throws(() => vm.runInContext(`apiCreateCollection('Classics', 'Warner')`, ctx), /fixed/);
+const nc = run(`apiCreateCollection('Curated', 'Folk Horror Faves')`);
+assert.strictEqual(nc.family, 'Curated');
+assert.throws(() => vm.runInContext(`apiCreateCollection('Curated', 'folk horror faves!')`, ctx), /already/);
+assert.strictEqual(run(`apiUpdateCollection(${JSON.stringify(nc.collection_id)}, {name: 'Folk Horror', description: 'Wicker everything'})`).name, 'Folk Horror');
+assert.throws(() => vm.runInContext(`apiUpdateCollection(${JSON.stringify(ham.collection_id)}, {name: 'Hammer Films'})`, ctx), /locked/);
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

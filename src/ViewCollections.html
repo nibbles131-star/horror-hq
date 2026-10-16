@@ -1,0 +1,286 @@
+<script>
+/* Pure collection maths, shared with the Node tests (tools/app_test.js). */
+var CollLogic = (function () {
+  /** Same rule as the old Franchise Tracker helper column N. */
+  function franchiseState(watched, total, unsure) {
+    if (unsure > 0) return 'Needs review';
+    if (watched === 0) return 'Not started';
+    if (watched >= total) return 'Complete';
+    if (watched / total >= 0.8) return 'Nearly complete';
+    return 'In progress';
+  }
+
+  /** Progress for one list, counting unique films (a film listed twice counts once). */
+  function progress(M, collId) {
+    var es = M.entriesByColl[collId] || [];
+    var seen = {}, films = [];
+    es.forEach(function (e) { if (!seen[e.film]) { seen[e.film] = true; films.push(M.byId[e.film]); } });
+    var count = function (s) { return films.filter(function (f) { return f.status === s; }).length; };
+    var rated = films.filter(function (f) { return f.rating !== null && f.rating !== undefined; });
+    var next = null;
+    es.some(function (e) { var f = M.byId[e.film]; if (f.status === 'Not watched') { next = f; return true; } return false; });
+    return {
+      total: films.length, entries: es.length, watched: count('Watched'), dnf: count('DNF'), unsure: count('Unsure'),
+      notWatched: count('Not watched'), rated: rated.length,
+      avg: rated.length ? rated.reduce(function (s, f) { return s + Number(f.rating); }, 0) / rated.length : null,
+      pct: films.length ? count('Watched') / films.length : 0, next: next
+    };
+  }
+
+  /** Totals for a whole family, unique films across its lists. */
+  function familyProgress(M, family) {
+    var seen = {}, watched = 0, total = 0;
+    M.collList.forEach(function (c) {
+      if (c.family !== family) return;
+      (M.entriesByColl[c.collection_id] || []).forEach(function (e) {
+        if (seen[e.film]) return;
+        seen[e.film] = true;
+        total++;
+        if (M.byId[e.film].status === 'Watched') watched++;
+      });
+    });
+    return { watched: watched, total: total, lists: M.collList.filter(function (c) { return c.family === family; }).length };
+  }
+
+  /** Bestiary tier earned for a watched count, from the frozen ladder (1 / 5 / 10). */
+  function bestiaryTier(M, watched) {
+    var ladder = M.raw.trophies.filter(function (d) { return d.family === 'Bestiary category'; })
+      .sort(function (a, b) { return a.threshold - b.threshold; });
+    var earned = null;
+    ladder.forEach(function (d) { if (watched >= d.threshold) earned = d.tier; });
+    return earned;
+  }
+
+  return { franchiseState: franchiseState, progress: progress, familyProgress: familyProgress, bestiaryTier: bestiaryTier };
+})();
+if (typeof module !== 'undefined') module.exports = CollLogic;
+</script>
+<style>
+  .click-card { cursor: pointer; transition: border-color .15s; }
+  .click-card:hover { border-color: var(--blood2); }
+</style>
+<script>
+/* Collections: every list family, its lists, and each list's films in order. */
+(function () {
+  var FAMILIES = [
+    { id: 'Yearly', icon: '📆', blurb: 'The yearly main list and its honourable mentions.' },
+    { id: 'Seasonal', icon: '🎃', blurb: 'Countdowns and event lists. Dates live in the Watch Planner.' },
+    { id: 'Curated', icon: '🩸', blurb: 'Hand-built themed lists.' },
+    { id: 'Classics', icon: '🦇', blurb: 'Hammer, Universal, Paramount, RKO and MGM.' },
+    { id: 'Bestiary', icon: '👹', blurb: 'Fifteen locked creature categories. Gold means 10 watched in a category.' },
+    { id: 'Alphabet', icon: '🔤', blurb: 'One film per letter.' },
+    { id: 'Franchise', icon: '🔪', blurb: 'Every franchise in order, with Unsure for the murky bits.' },
+    { id: 'Bubblegum', icon: '🫧', blurb: 'Rated /10 for quality and /5 on the Cuntometer. Never the same thing.' }
+  ];
+  var LOCKED = { Bestiary: true, Classics: true };
+  var TIER_ICON = { Bronze: '🥉', Silver: '🥈', Gold: '🥇' };
+  var st = { family: 'Yearly', coll: null, show: '', q: '' };
+
+  function stateBadge(s) {
+    var cls = s === 'Complete' ? 'Watched' : s === 'Needs review' ? 'Unsure' : s === 'Not started' ? 'Not' : '';
+    return '<span class="status ' + cls + '">' + s + '</span>';
+  }
+
+  function renderOverview(a, M) {
+    var fam = FAMILIES.filter(function (f) { return f.id === st.family; })[0];
+    var tabs = '<div class="seg" style="flex-wrap:wrap">' + FAMILIES.map(function (f) {
+      var p = CollLogic.familyProgress(M, f.id);
+      return '<button data-cfam="' + f.id + '" class="' + (st.family === f.id ? 'on' : '') + '">' + f.icon + ' ' + f.id +
+        ' <span class="small" style="opacity:.7">' + p.watched + '/' + p.total + '</span></button>';
+    }).join('') + '</div>';
+    var colls = M.collList.filter(function (c) { return c.family === st.family; });
+    var fp = CollLogic.familyProgress(M, st.family);
+    var cards = colls.map(function (c) {
+      var p = CollLogic.progress(M, c.collection_id);
+      var extra = '';
+      if (c.family === 'Franchise') extra = stateBadge(CollLogic.franchiseState(p.watched, p.total, p.unsure));
+      if (c.family === 'Bestiary') {
+        var tier = CollLogic.bestiaryTier(M, p.watched);
+        extra = tier ? '<span class="chip">' + TIER_ICON[tier] + ' ' + tier + '</span>' : '<span class="chip">No trophy yet</span>';
+      }
+      return '<div class="panel click-card" data-copen="' + a.esc(c.collection_id) + '">' +
+        '<div class="row" style="border:0;padding:0 0 8px"><span class="t"><b>' + a.esc(c.icon) + ' ' + a.esc(c.name) + '</b></span>' + extra + '</div>' +
+        '<div class="bar"><i style="width:' + (p.pct * 100) + '%"></i></div>' +
+        '<div class="small muted" style="margin-top:8px">' + p.watched + ' of ' + p.total + ' watched' +
+          (p.unsure ? ' • ' + p.unsure + ' unsure' : '') + (p.dnf ? ' • ' + p.dnf + ' DNF' : '') +
+          (p.avg !== null ? ' • avg ' + (Math.round(p.avg * 10) / 10) : '') + '</div>' +
+        (p.next ? '<div class="small faint" style="margin-top:4px">Next: ' + a.esc(p.next.key) + '</div>' : '') +
+      '</div>';
+    }).join('');
+    return a.topBar('Collections', 'Every list you own, nothing you have to scroll a spreadsheet for. 📚') +
+      '<div class="toolbar">' + tabs + '</div>' +
+      '<div class="toolbar"><span class="muted">' + a.esc(fam.blurb) + ' ' + fp.lists + ' list' + (fp.lists === 1 ? '' : 's') + ', ' +
+        fp.watched + ' of ' + fp.total + ' films watched (' + a.pct(fp.total ? fp.watched / fp.total : 0) + ').</span><span class="grow"></span>' +
+        (LOCKED[st.family] ? '' : '<button class="btn" data-cnew>+ New ' + a.esc(st.family) + ' list</button>') + '</div>' +
+      (cards ? '<div class="grid g3">' + cards + '</div>' : '<div class="panel empty">No ' + a.esc(st.family) + ' lists yet.</div>');
+  }
+
+  function renderList(a, M) {
+    var c = M.coll[st.coll];
+    var p = CollLogic.progress(M, c.collection_id);
+    var bubble = c.family === 'Bubblegum';
+    var es = (M.entriesByColl[c.collection_id] || []).filter(function (e) {
+      var f = M.byId[e.film];
+      if (st.show === 'todo') return f.status === 'Not watched' || f.status === 'Unsure';
+      if (st.show === 'done') return f.status === 'Watched' || f.status === 'DNF';
+      return true;
+    });
+    var all = M.entriesByColl[c.collection_id] || [];
+    var cunts = bubble ? all.map(function (e) { var s = M.byId[e.film].special; return s && s[0]; }).filter(function (x) { return x; }) : [];
+    var stats = [['Watched', p.watched + '/' + p.total], ['Complete', a.pct(p.pct)], ['Unwatched', p.notWatched],
+      ['Avg rating', p.avg === null ? '—' : Math.round(p.avg * 10) / 10]];
+    if (c.family === 'Franchise') stats.push(['State', CollLogic.franchiseState(p.watched, p.total, p.unsure)]);
+    if (c.family === 'Bestiary') stats.push(['Trophy', CollLogic.bestiaryTier(M, p.watched) || 'None yet']);
+    if (bubble) stats.push(['Avg 💅🏻', cunts.length ? Math.round(cunts.reduce(function (s, x) { return s + x; }, 0) / cunts.length * 10) / 10 + '/5' : '—']);
+    var slotLabel = c.family === 'Alphabet' ? 'Letter' : c.family === 'Franchise' ? 'Entry' : 'Slot';
+
+    var rows = es.map(function (e) {
+      var f = M.byId[e.film];
+      var i = all.indexOf(e);
+      return '<tr><td class="faint small">' + (i + 1) + '</td>' +
+        '<td><a class="film-link small" data-cslot="' + a.esc(e.id) + '" title="Edit">' + (e.slot ? a.esc(e.slot) : '<span class="faint">set</span>') + '</a></td>' +
+        '<td>' + a.filmLink(f) + (e.contextNote ? '<div class="small faint">' + a.esc(e.contextNote) + '</div>' : '') + '</td>' +
+        '<td>' + a.statusChip(f.status) + '</td><td>' + a.ratingCell(f) + '</td>' +
+        (bubble ? '<td>' + (f.special && f.special[0] ? '<b>' + f.special[0] + '</b>/5' : '<span class="faint">—</span>') + '</td>' : '') +
+        '<td class="small muted">' + a.esc(e.sourceNote || '') + '</td>' +
+        '<td style="white-space:nowrap">' +
+          '<button class="btn ghost small" data-cmove="' + a.esc(e.id) + '" data-to="' + (i - 1) + '"' + (i === 0 ? ' disabled' : '') + ' title="Move up">↑</button>' +
+          '<button class="btn ghost small" data-cmove="' + a.esc(e.id) + '" data-to="' + (i + 1) + '"' + (i === all.length - 1 ? ' disabled' : '') + ' title="Move down">↓</button>' +
+          '<button class="btn ghost small" data-cremove="' + a.esc(e.id) + '" title="Remove from this list">✕</button></td></tr>';
+    }).join('');
+
+    var hits = st.q.trim() ? HQ.search(M, st.q).slice(0, 8) : [];
+    var onList = {};
+    all.forEach(function (e) { onList[e.film] = true; });
+
+    return a.topBar(c.icon + ' ' + c.name, '<a class="film-link" data-cback>← ' + a.esc(c.family) + '</a>' + (c.description ? ' • ' + a.esc(c.description) : '')) +
+      '<div class="stats" style="grid-template-columns:repeat(' + stats.length + ',1fr)">' + stats.map(function (s) {
+        return '<div class="stat"><span>' + a.esc(s[0]) + '</span><b>' + a.esc(s[1]) + '</b></div>';
+      }).join('') + '</div>' +
+      '<div class="panel">' +
+        '<div class="toolbar"><div class="seg">' + [['', 'All'], ['todo', 'Still to watch'], ['done', 'Done']].map(function (o) {
+          return '<button data-cshow="' + o[0] + '" class="' + (st.show === o[0] ? 'on' : '') + '">' + o[1] + '</button>';
+        }).join('') + '</div><span class="grow"></span>' +
+        '<button class="btn ghost" data-cedit>' + (LOCKED[c.family] ? 'Edit description' : 'Rename / edit') + '</button></div>' +
+        '<div class="search" style="width:100%;margin-bottom:14px"><input id="cadd" placeholder="Add a film to ' + a.esc(c.name) + ': type a title, or Title (YYYY) for a new one" value="' + a.esc(st.q) + '" autocomplete="off"></div>' +
+        (st.q.trim() ? '<div class="panel" style="margin:-6px 0 14px;padding:8px 14px">' + (hits.length ? hits.map(function (f) {
+            return '<div class="row"><span class="t">' + a.esc(f.key) + ' ' + a.statusChip(f.status) + '</span>' +
+              (onList[f.id] ? '<span class="small faint">already here</span>' : '<button class="btn" data-caddfilm="' + a.esc(f.id) + '">Add</button>') + '</div>';
+          }).join('') : '') +
+          '<div class="row"><span class="t muted small">Not there? Add it as a brand-new film.</span><button class="btn" data-cnewfilm>New film…</button></div></div>' : '') +
+        (rows ? '<table><thead><tr><th>#</th><th>' + slotLabel + '</th><th>Film</th><th>Status</th><th>Rating</th>' + (bubble ? '<th>💅🏻 /5</th>' : '') +
+          '<th>Source</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' : '<div class="empty">Nothing here' + (st.show ? ' with that filter' : ' yet') + '.</div>') +
+      '</div>';
+  }
+
+  function render(a) {
+    var M = a.model();
+    if (st.coll && !M.coll[st.coll]) st.coll = null;
+    return st.coll ? renderList(a, M) : renderOverview(a, M);
+  }
+
+  function addFilmTo(a, M, filmId) {
+    var c = M.coll[st.coll];
+    var slot = c.family === 'Alphabet' ? prompt('Letter for ' + M.byId[filmId].title + ':', M.byId[filmId].title.charAt(0).toUpperCase()) : '';
+    if (slot === null) return;
+    return a.call('apiAddEntry', c.collection_id, filmId, slot || '', '', false).then(function (rec) {
+      HQ.addEntry(M, { id: rec.entry_id, coll: rec.collection_id, film: rec.film_id, slot: rec.slot_label, seq: rec.sequence, sourceNote: '', contextNote: '' });
+      HQ.sortEntries(M);
+      st.q = '';
+      a.render();
+      a.toast('Added ' + M.byId[filmId].title + ' to ' + c.name, 'ok');
+    }).catch(function (e) { a.toast(e.message, 'bad'); });
+  }
+
+  function newFilmThenAdd(a, M) {
+    var m = st.q.trim().match(/^(.*\S)\s*\((\d{4})\)$/);
+    var title = m ? m[1] : prompt('Film title (without the year):', st.q.trim());
+    if (!title) return;
+    var year = m ? m[2] : prompt('Release year for ' + title + ':');
+    if (!year) return;
+    a.call('apiAddFilm', title, Number(year), false).then(function (res) {
+      if (!res.created) {
+        a.toast('Already known (' + res.via + '): ' + res.film.display_key, 'ok');
+        if (!M.byId[res.film.film_id]) return;
+        return addFilmTo(a, M, res.film.film_id);
+      }
+      var f = { id: res.film.film_id, key: res.film.display_key, title: res.film.title, year: res.film.release_year, poster: '',
+        status: 'Not watched', rating: null, reaction: '', version: 1, modified: res.state.modified_at, countries: [], memory: null, special: null, aliases: [] };
+      f.search = HQ.normalise(f.key) + ' ' + f.id.toLowerCase();
+      M.films.push(f); M.byId[f.id] = f;
+      return addFilmTo(a, M, f.id);
+    }).catch(function (e) { a.toast(e.message, 'bad'); });
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-cfam],[data-copen],[data-cback],[data-cshow],[data-cmove],[data-cremove],[data-cslot],[data-caddfilm],[data-cnewfilm],[data-cnew],[data-cedit]');
+    if (!t) return false;
+    var d = t.dataset, M = a.model();
+    if (d.cfam) { st.family = d.cfam; st.coll = null; a.render(); return true; }
+    if (d.copen) { st.coll = d.copen; st.show = ''; st.q = ''; window.scrollTo(0, 0); a.render(); return true; }
+    if (d.cback !== undefined) { st.coll = null; a.render(); return true; }
+    if (d.cshow !== undefined) { st.show = d.cshow; a.render(); return true; }
+    if (d.cmove) {
+      var to = Number(d.to);
+      a.call('apiMoveEntry', d.cmove, to).then(function (ids) {
+        ids.forEach(function (id, i) { if (M.entryById[id]) M.entryById[id].seq = i + 1; });
+        HQ.sortEntries(M); a.render();
+      }).catch(function (e) { a.toast('Not moved: ' + e.message, 'bad'); });
+      return true;
+    }
+    if (d.cremove) {
+      var e = M.entryById[d.cremove], f = M.byId[e.film], c = M.coll[e.coll];
+      if (!confirm('Remove ' + f.title + ' from ' + c.name + '? Its rating and other lists stay as they are.')) return true;
+      a.call('apiRemoveEntry', e.id).then(function () { HQ.removeEntry(M, e.id); a.render(); a.toast('Removed from ' + c.name, 'ok'); })
+        .catch(function (err) { a.toast('Not removed: ' + err.message, 'bad'); });
+      return true;
+    }
+    if (d.cslot) {
+      var en = M.entryById[d.cslot];
+      var label = prompt('Slot / label for ' + M.byId[en.film].title + ':', en.slot || '');
+      if (label === null) return true;
+      a.call('apiUpdateEntry', en.id, { slot_label: label }).then(function (rec) { en.slot = rec.slot_label; a.render(); })
+        .catch(function (err) { a.toast(err.message, 'bad'); });
+      return true;
+    }
+    if (d.caddfilm) { addFilmTo(a, M, d.caddfilm); return true; }
+    if (d.cnewfilm !== undefined) { newFilmThenAdd(a, M); return true; }
+    if (d.cnew !== undefined) {
+      var name = prompt('Name for the new ' + st.family + ' list:');
+      if (!name) return true;
+      a.call('apiCreateCollection', st.family, name, '', '').then(function (rec) {
+        M.coll[rec.collection_id] = rec; M.collList.push(rec); M.entriesByColl[rec.collection_id] = [];
+        st.coll = rec.collection_id; a.render(); a.toast('Created ' + rec.name, 'ok');
+      }).catch(function (err) { a.toast(err.message, 'bad'); });
+      return true;
+    }
+    if (d.cedit !== undefined) {
+      var cc = M.coll[st.coll], patch = {};
+      if (!LOCKED[cc.family]) {
+        var nn = prompt('List name:', cc.name);
+        if (nn === null) return true;
+        patch.name = nn;
+      }
+      var desc = prompt('Description (optional):', cc.description || '');
+      if (desc === null) return true;
+      patch.description = desc;
+      a.call('apiUpdateCollection', cc.collection_id, patch).then(function (rec) {
+        cc.name = rec.name; cc.description = rec.description; a.render(); a.toast('Saved', 'ok');
+      }).catch(function (err) { a.toast(err.message, 'bad'); });
+      return true;
+    }
+    return false;
+  }
+
+  function onInput(ev, a) {
+    if (ev.target.id !== 'cadd') return false;
+    st.q = ev.target.value;
+    var pos = ev.target.selectionStart;
+    a.render();
+    var again = a.$('#cadd'); again.focus(); again.setSelectionRange(pos, pos);
+    return true;
+  }
+
+  App.view('collections', { render: render, onClick: onClick, onInput: onInput });
+})();
+</script>
