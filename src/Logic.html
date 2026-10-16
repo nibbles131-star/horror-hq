@@ -24,6 +24,12 @@ var HQ = (function () {
     return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   }
 
+  /** Posters travel as the short TMDB path ("/abc.jpg") to keep the bootstrap small. */
+  function posterUrl(p) {
+    if (!p) return '';
+    return p.charAt(0) === '/' ? 'https://image.tmdb.org/t/p/w342' + p : p;
+  }
+
   function decadeOf(y) { return y ? (Math.floor(y / 10) * 10) + 's' : ''; }
 
   /** Builds the in-memory model from apiBootstrap() output. */
@@ -31,7 +37,7 @@ var HQ = (function () {
     var M = { raw: raw, films: [], byId: {}, coll: {}, collList: [], entriesByColl: {}, entriesByFilm: {}, entryById: {} };
     raw.films.forEach(function (f) {
       var st = raw.state[f[0]] || ['Not watched', null, '', 1, ''];
-      var film = { id: f[0], key: f[1], title: f[2], year: f[3], poster: f[4],
+      var film = { id: f[0], key: f[1], title: f[2], year: f[3], poster: posterUrl(f[4]),
         status: st[0], rating: st[1], reaction: st[2] || '', version: st[3], modified: st[4],
         countries: (raw.filmCountries[f[0]] || []).map(function (c) { return raw.countries[c]; }),
         memory: raw.memory[f[0]] || null, special: raw.special[f[0]] || null, aliases: [] };
@@ -206,6 +212,25 @@ var HQ = (function () {
         earned: coreGolds === core.length && bestiaryGolds >= (plat ? plat.threshold : 5) } };
   }
 
+  /** Every trophy rung currently earned, with a stable key, for the unlock reveal. */
+  function earnedTrophies(M) {
+    var t = trophies(M), out = [];
+    t.core.forEach(function (c) {
+      c.ladder.forEach(function (d) {
+        if (c.value >= d.threshold) out.push({ key: c.family + '|' + d.tier, name: d.name, tier: d.tier, family: c.family,
+          detail: d.threshold + ' · ' + String(c.metric).toLowerCase() });
+      });
+    });
+    t.bestiary.forEach(function (b) {
+      t.bestiaryLadder.forEach(function (d) {
+        if (b.watched >= d.threshold) out.push({ key: 'Bestiary|' + b.name + '|' + d.tier, name: b.name, tier: d.tier, family: 'Bestiary',
+          detail: d.threshold + ' watched in ' + b.name, icon: b.icon });
+      });
+    });
+    if (t.platinum.earned) out.push({ key: 'Platinum', name: 'Platinum', tier: 'Platinum', family: 'Platinum', detail: 'Every core Gold plus five Bestiary Golds' });
+    return out;
+  }
+
   /** Ranked search over title, aliases, year and film id. */
   function search(M, query, films) {
     var q = normalise(query);
@@ -228,10 +253,10 @@ var HQ = (function () {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
 
-  return { VERDICTS: VERDICTS, verdict: verdict, normalise: normalise, decadeOf: decadeOf, build: build,
+  return { VERDICTS: VERDICTS, verdict: verdict, normalise: normalise, posterUrl: posterUrl, decadeOf: decadeOf, build: build,
     addEntry: addEntry, removeEntry: removeEntry, sortEntries: sortEntries, isListed: isListed, families: families,
     listNames: listNames, headline: headline, rateNext: rateNext, passport: passport, franchises: franchises,
-    bestiary: bestiary, trophies: trophies, search: search, isoToday: isoToday };
+    bestiary: bestiary, trophies: trophies, earnedTrophies: earnedTrophies, search: search, isoToday: isoToday };
 })();
 if (typeof module !== 'undefined') module.exports = HQ;
 </script>

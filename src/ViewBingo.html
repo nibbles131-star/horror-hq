@@ -1,0 +1,249 @@
+<script>
+/*
+ * Pure Horror Bingo logic, shared with the Node tests (tools/app_test.js).
+ * There are no watch dates, so a card snapshots what was already watched when it was dealt:
+ * only films watched (or DNF'd) after that can tick squares.
+ */
+var BingoLogic = (function () {
+  var US_UK = /^(usa|us|united states|united states of america|uk|united kingdom|england|great britain)$/i;
+
+  function inFam(fam) { return function (f, c) { return !!c.HQ.families(c.M, f)[fam]; }; }
+  function decade(d, label, sub, icon) {
+    return { id: 'd' + d, label: label, sub: sub, icon: icon, test: function (f) { return f.year >= d && f.year < d + 10; } };
+  }
+  function franchiseSeq(f, c, first) {
+    return (c.M.entriesByFilm[f.id] || []).some(function (e) {
+      return c.M.coll[e.coll].family === 'Franchise' && (first ? e.seq === 1 : e.seq > 1);
+    });
+  }
+
+  var STATIC = [
+    { id: 'pre1960', label: 'Black & white era', sub: 'released before 1960', icon: '🎞️', test: function (f) { return f.year && f.year < 1960; } },
+    decade(1960, 'Swinging sixties', 'a 1960s film', '🕯️'),
+    decade(1970, '70s grime', 'a 1970s film', '🪓'),
+    decade(1980, '80s practical gore', 'a 1980s film', '📼'),
+    decade(1990, 'Scream era', 'a 1990s film', '📞'),
+    decade(2000, 'Torture-core', 'a 2000s film', '⛓️'),
+    { id: 'fresh', label: 'Fresh blood', sub: 'released in the last 3 years', icon: '🩸', test: function (f, c) { return f.year >= c.thisYear - 2; } },
+    { id: 'abroad', label: 'Passport fright', sub: 'not from the US or UK', icon: '🌍',
+      test: function (f) { return f.countries.length > 0 && f.countries.every(function (x) { return !US_UK.test(String(x).trim()); }); } },
+    { id: 'stamp', label: 'New stamp', sub: 'a country you had not watched before', icon: '🛂',
+      test: function (f, c) { return f.countries.some(function (x) { return !c.baseCountries[x]; }); } },
+    { id: 'sequel', label: 'Sequel-itis', sub: 'a franchise entry after the first', icon: '🔁', test: function (f, c) { return franchiseSeq(f, c, false); } },
+    { id: 'origin', label: 'Where it began', sub: 'the first film of a franchise', icon: '🥚', test: function (f, c) { return franchiseSeq(f, c, true); } },
+    { id: 'classic', label: 'Studio vault', sub: 'a Classic Studios film', icon: '🦇', test: inFam('Classics') },
+    { id: 'bubble', label: 'Bubblegum & Cunt', sub: 'from the pink list', icon: '🫧', test: inFam('Bubblegum') },
+    { id: 'alpha', label: 'Alphabet soup', sub: 'from the Alphabet List', icon: '🔤', test: inFam('Alphabet') },
+    { id: 'seasonal', label: 'Seasonal scream', sub: 'from Seasonal & Countdowns', icon: '🎃', test: inFam('Seasonal') },
+    { id: 'curated', label: 'Curated cut', sub: 'from a Curated List', icon: '🩸', test: inFam('Curated') },
+    { id: 'yearly', label: 'Year in fear', sub: 'from a Yearly List', icon: '📆', test: inFam('Yearly') },
+    { id: 'offlist', label: 'Off the books', sub: 'on no list at all', icon: '🕵️', test: function (f, c) { return !c.HQ.isListed(c.M, f); } },
+    { id: 'loved', label: 'New obsession', sub: 'rate it 9 or 10', icon: '🖤', rating: true, test: function (f) { return f.rating >= 9; } },
+    { id: 'stinker', label: 'Absolute stinker', sub: 'rate it 3 or lower', icon: '🤮', rating: true, test: function (f) { return f.rating !== null && f.rating !== undefined && f.rating <= 3; } },
+    { id: 'mid', label: 'Dead average', sub: 'rate it a 5 or 6', icon: '😐', rating: true, test: function (f) { return f.rating === 5 || f.rating === 6; } },
+    { id: 'dnf', label: 'Tapped out', sub: 'a DNF counts here', icon: '🏳️', dnf: true, test: function (f) { return f.status === 'DNF'; } },
+    { id: 'oneword', label: 'One-word wonder', sub: 'a one-word title', icon: '☝️', test: function (f) { return !/\s/.test(String(f.title).trim()); } },
+    { id: 'number', label: 'By the numbers', sub: 'a number in the title', icon: '🔢', test: function (f) { return /\d/.test(f.title); } },
+    { id: 'night', label: 'Night shift', sub: 'Night, Dark or Dead in the title', icon: '🌑', test: function (f) { return /\b(night|dark|dead)/i.test(f.title); } },
+    { id: 'shout', label: 'Shouty title', sub: 'a ! or ? in the title', icon: '❗', test: function (f) { return /[!?]/.test(f.title); } },
+    { id: 'dug', label: 'Excavated', sub: 'a film the Excavator dug up', icon: '⛏️', test: function (f) { return !!(f.memory && /excavat|arnold|approved/i.test((f.memory[2] || '') + ' ' + (f.memory[0] || ''))); } },
+    { id: 'cunt5', label: 'Full cunt', sub: 'Cuntometer 5/5', icon: '💅🏻', rating: true, test: function (f, c) { return !!(f.special && f.special[0] === 5) && inFam('Bubblegum')(f, c); } }
+  ];
+
+  /** Every possible square: the static ones plus one per Bestiary category. */
+  function allSquares(M) {
+    var beasts = M.collList.filter(function (c) { return c.family === 'Bestiary'; }).map(function (c) {
+      return { id: 'b:' + c.collection_id, label: c.name, sub: 'Bestiary', icon: c.icon || '👹', beast: true,
+        test: function (f, cx) { return (cx.M.entriesByFilm[f.id] || []).some(function (e) { return e.coll === c.collection_id; }); } };
+    });
+    return STATIC.concat(beasts);
+  }
+
+  function ctxFor(M, HQ, card) {
+    var base = {};
+    (card && card.countries || []).forEach(function (c) { base[c] = true; });
+    return { M: M, HQ: HQ, baseCountries: base, thisYear: Number(HQ.isoToday().slice(0, 4)) };
+  }
+
+  function rng(seed) {
+    var s = seed % 2147483647 || 1;
+    return function () { s = s * 16807 % 2147483647; return (s - 1) / 2147483646; };
+  }
+
+  /** Deals a new card: 24 squares that are actually achievable from unwatched films, plus the free centre. */
+  function deal(M, HQ, seed) {
+    var seen = M.films.filter(function (f) { return f.status === 'Watched' || f.status === 'DNF'; });
+    var countries = {};
+    seen.forEach(function (f) { if (f.status === 'Watched') f.countries.forEach(function (c) { countries[c] = true; }); });
+    var card = { created: new Date().toISOString(), seed: seed, baseline: seen.map(function (f) { return f.id; }), countries: Object.keys(countries), lines: 0 };
+    var cx = ctxFor(M, HQ, card);
+    var pool = M.films.filter(function (f) { return f.status === 'Not watched'; });
+    var ok = allSquares(M).filter(function (sq) {
+      return sq.rating || sq.dnf ? pool.length > 0 : pool.some(function (f) { return sq.test(f, cx); });
+    });
+    var r = rng(seed);
+    for (var i = ok.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)); var t = ok[i]; ok[i] = ok[j]; ok[j] = t; }
+    var beasts = 0, picked = [];
+    ok.forEach(function (sq) {
+      if (picked.length >= 24) return;
+      if (sq.beast && beasts >= 4) return;
+      if (sq.beast) beasts++;
+      picked.push(sq.id);
+    });
+    // A tiny library can't fill a card with achievable squares; top it up rather than deal a broken card.
+    allSquares(M).forEach(function (sq) { if (picked.length < 24 && picked.indexOf(sq.id) < 0) picked.push(sq.id); });
+    card.squares = picked.slice(0, 12).concat(['free']).concat(picked.slice(12));
+    return card;
+  }
+
+  /** Films that count for a card: watched or DNF'd since it was dealt. */
+  function fresh(M, card) {
+    var base = {};
+    card.baseline.forEach(function (id) { base[id] = true; });
+    return M.films.filter(function (f) { return !base[f.id] && (f.status === 'Watched' || f.status === 'DNF'); })
+      .sort(function (a, b) { return String(a.modified || '').localeCompare(String(b.modified || '')); });
+  }
+
+  /** The card's 25 cells with their tick state, plus completed lines. */
+  function progress(M, HQ, card) {
+    var defs = {};
+    allSquares(M).forEach(function (sq) { defs[sq.id] = sq; });
+    var cx = ctxFor(M, HQ, card);
+    var films = fresh(M, card);
+    var cells = card.squares.map(function (id) {
+      if (id === 'free') return { id: id, free: true, done: true, label: 'FREE', sub: 'you watch horror, it counts', icon: '💀' };
+      var sq = defs[id];
+      if (!sq) return { id: id, free: true, done: true, label: 'Gone', sub: 'this square\'s list was removed', icon: '🪦' };
+      var hit = null;
+      films.forEach(function (f) {
+        if (hit) return;
+        if (f.status === 'DNF' && !sq.dnf) return;
+        if (sq.test(f, cx)) hit = f;
+      });
+      return { id: id, label: sq.label, sub: sq.sub, icon: sq.icon, done: !!hit, film: hit, sq: sq };
+    });
+    var L = [];
+    for (var i = 0; i < 5; i++) { L.push([0, 1, 2, 3, 4].map(function (k) { return i * 5 + k; })); L.push([0, 1, 2, 3, 4].map(function (k) { return k * 5 + i; })); }
+    L.push([0, 6, 12, 18, 24]); L.push([4, 8, 12, 16, 20]);
+    var lines = L.filter(function (l) { return l.every(function (n) { return cells[n].done; }); });
+    var hot = {};
+    lines.forEach(function (l) { l.forEach(function (n) { hot[n] = true; }); });
+    return { cells: cells, lines: lines.length, hot: hot, ticked: cells.filter(function (c) { return c.done; }).length, blackout: cells.every(function (c) { return c.done; }), counted: films.length };
+  }
+
+  /** Unwatched films that would tick a square, for the hint panel. */
+  function suggestions(M, HQ, card, id, limit) {
+    var sq = allSquares(M).filter(function (s) { return s.id === id; })[0];
+    if (!sq) return [];
+    var cx = ctxFor(M, HQ, card);
+    return M.films.filter(function (f) { return f.status === 'Not watched' && (sq.rating || sq.dnf || sq.test(f, cx)); })
+      .sort(function (a, b) { return (HQ.isListed(M, b) ? 1 : 0) - (HQ.isListed(M, a) ? 1 : 0) || a.key.localeCompare(b.key); })
+      .slice(0, limit || 12);
+  }
+
+  return { allSquares: allSquares, deal: deal, progress: progress, fresh: fresh, suggestions: suggestions };
+})();
+if (typeof module !== 'undefined') module.exports = BingoLogic;
+</script>
+<style>
+  .bingo-wrap { display: grid; grid-template-columns: minmax(0, 640px) 1fr; gap: 20px; align-items: start; }
+  .bingo-head { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 8px; text-align: center; font-family: var(--display); font-size: 46px; line-height: 1; color: var(--blood2); text-shadow: 0 0 18px #e3242b88, 0 3px 0 #000; }
+  .bingo { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .bsq { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer; background: linear-gradient(160deg, #22090c, #12060a); border: 1px solid var(--line2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px; transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .bsq:hover { transform: translateY(-2px); border-color: var(--blood2); box-shadow: var(--glow); }
+  .bsq.sel { border-color: var(--blood3); box-shadow: 0 0 0 2px var(--blood3), var(--glow); }
+  .bsq .ic { font-size: 24px; line-height: 1.1; }
+  .bsq .lb { font-weight: 800; font-size: 12px; line-height: 1.15; margin-top: 4px; }
+  .bsq .sb { font-size: 10px; color: var(--muted); line-height: 1.2; margin-top: 3px; }
+  .bsq .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: brightness(.38) saturate(.8); }
+  .bsq.done { border-color: #6d0710; }
+  .bsq.done > :not(.bg) { position: relative; z-index: 2; text-shadow: 0 1px 3px #000, 0 0 10px #000; }
+  .bsq.done::after { content: "✕"; position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; font-family: var(--display); font-size: 92px; color: #e3242b99; text-shadow: 0 0 30px #e3242b; transform: rotate(-8deg); pointer-events: none; animation: stamp .35s cubic-bezier(.2, 1.6, .4, 1) both; }
+  .bsq.free { background: radial-gradient(circle, #5a0c13, #1a0709 70%); border-color: var(--blood2); }
+  .bsq.free::after { content: none; }
+  .bsq.hot { box-shadow: 0 0 0 2px var(--blood3), 0 0 22px #ff4d5588; }
+  @keyframes stamp { from { transform: scale(2) rotate(-20deg); opacity: 0; } to { transform: rotate(-8deg); opacity: 1; } }
+  .bsq .who { font-size: 10.5px; font-weight: 700; margin-top: 3px; color: #fff; text-shadow: 0 1px 2px #000; }
+  .bingo-banner { font-family: var(--display); font-size: 56px; color: #fff; text-align: center; text-shadow: 0 0 24px var(--blood2), 0 0 50px var(--blood); animation: flicker 3s linear infinite; margin: 6px 0 12px; }
+</style>
+<script>
+/* Horror Bingo tab for the Funhouse: deal a card, then watch films to tick squares. Lines light up; blackout is the dream. */
+var BingoView = (function () {
+  var st = { sel: null };
+
+  function card(M) { return M.raw.fun && M.raw.fun.bingo_card; }
+
+  function save(a, M, c) {
+    M.raw.fun = M.raw.fun || {};
+    M.raw.fun.bingo_card = c;
+    return a.call('apiSaveUiSetting', 'bingo_card', c).catch(function (e) { a.toast('Card not saved: ' + e.message, 'bad'); });
+  }
+
+  function render(a, M) {
+    var c = card(M);
+    if (!c) {
+      return '<div class="panel fate" style="text-align:center;padding:40px"><div style="font-size:60px">🎱</div>' +
+        '<div class="bingo-banner" style="font-size:44px">Horror Bingo</div>' +
+        '<p class="muted">Get a 5×5 card of horror challenges. Squares tick themselves as you watch and rate. Five in a row is a BINGO. All 25 is a blackout, and a cry for help.</p>' +
+        '<p class="small faint">Only films you watch after dealing the card count, so your back catalogue can\'t cheat for you.</p>' +
+        '<button class="btn primary bigbtn" data-bdeal>Deal me a card</button></div>';
+    }
+    var p = BingoLogic.progress(M, HQ, c);
+    if (p.lines > (c.lines || 0)) {
+      var more = p.lines - (c.lines || 0);
+      c.lines = p.lines;
+      save(a, M, c);
+      setTimeout(function () { a.toast(p.blackout ? 'BLACKOUT. Every square. Seek help. 💀' : 'BINGO! ' + (more > 1 ? more + ' lines at once!' : 'Line complete 🩸'), 'ok'); }, 50);
+    }
+    var cells = p.cells.map(function (cell, i) {
+      var f = cell.film;
+      return '<div class="bsq' + (cell.done ? ' done' : '') + (cell.free ? ' free' : '') + (p.hot[i] ? ' hot' : '') + (st.sel === cell.id ? ' sel' : '') + '" data-bsq="' + a.esc(cell.id) + '" title="' + a.esc(cell.label + ': ' + cell.sub) + '">' +
+        (f && f.poster ? '<img class="bg" src="' + a.esc(f.poster) + '" alt="">' : '') +
+        '<div class="ic">' + a.esc(cell.icon) + '</div><div class="lb">' + a.esc(cell.label) + '</div>' +
+        (f ? '<div class="who">' + a.esc(f.title) + '</div>' : '<div class="sb">' + a.esc(cell.sub) + '</div>') + '</div>';
+    }).join('');
+
+    var side;
+    var sel = st.sel && p.cells.filter(function (x) { return x.id === st.sel; })[0];
+    if (sel && !sel.free) {
+      var sug = sel.done ? [] : BingoLogic.suggestions(M, HQ, c, sel.id, 10);
+      side = '<div class="panel"><h2>' + a.esc(sel.icon) + ' ' + a.esc(sel.label) + '</h2><div class="muted" style="margin-bottom:10px">' + a.esc(sel.sub) + '</div>' +
+        (sel.done ? '<div>Ticked by ' + a.filmLink(sel.film) + '. Bloody well done.</div>'
+          : (sel.sq.rating ? '<div class="small faint" style="margin-bottom:8px">This one depends on how you rate it. Any of these could do it:</div>' : '') +
+            (sug.length ? sug.map(function (f) { return '<div class="row">' + a.thumb(f) + '<span class="t">' + a.filmLink(f) + '</span>' + (HQ.isListed(M, f) ? '' : '<span class="chip">unlisted</span>') + '</div>'; }).join('')
+              : '<div class="empty">Nothing unwatched fits. Excavate harder.</div>')) + '</div>';
+    } else {
+      side = '<div class="panel"><h2>🎱 Your card</h2>' +
+        '<div class="row"><span class="t">Squares ticked</span><b>' + p.ticked + ' / 25</b></div>' +
+        '<div class="row"><span class="t">Lines</span><b>' + p.lines + ' / 12</b></div>' +
+        '<div class="row"><span class="t">Films counted so far</span><b>' + p.counted + '</b></div>' +
+        '<div class="row"><span class="t">Dealt</span><span class="muted">' + a.esc(String(c.created).slice(0, 10)) + '</span></div>' +
+        '<p class="small muted" style="margin-top:12px">Click any square for films that would tick it. A film can tick as many squares as it fits. DNFs only count for “Tapped out”.</p>' +
+        '<button class="btn" data-bdeal>Deal a new card</button></div>';
+    }
+    return (p.blackout ? '<div class="bingo-banner">BLACKOUT 💀</div>' : p.lines ? '<div class="bingo-banner">BINGO' + (p.lines > 1 ? ' ×' + p.lines : '') + '!</div>' : '') +
+      '<div class="bingo-wrap"><div><div class="bingo-head"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>' +
+      '<div class="bingo">' + cells + '</div></div><div>' + side + '</div></div>';
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-bdeal],[data-bsq]');
+    if (!t || ev.target.closest('[data-film]')) return false;
+    var M = a.model();
+    if (t.dataset.bdeal !== undefined) {
+      var c = card(M);
+      if (c && BingoLogic.progress(M, HQ, c).ticked > 1 && !confirm('Tear up this card and deal a new one? Its ticks are lost (your films are untouched).')) return true;
+      st.sel = null;
+      save(a, M, BingoLogic.deal(M, HQ, Math.floor(Math.random() * 2147483646) + 1));
+      a.render();
+      return true;
+    }
+    st.sel = st.sel === t.dataset.bsq ? null : t.dataset.bsq;
+    a.render();
+    return true;
+  }
+
+  return { render: render, onClick: onClick };
+})();
+</script>

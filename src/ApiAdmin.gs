@@ -298,9 +298,10 @@ function apiSavePosterKey(key) {
     } else {
       props.deleteProperty('TMDB_API_KEY');
     }
-    var setting = { provider: 'TMDB', enabled: !!key, note: key ? 'Key saved. Poster fetching is the next feature to switch on.' : 'Add a free TMDB API key in Admin to switch posters on.' };
+    var setting = { provider: 'TMDB', enabled: !!key, note: key ? 'Key saved. Posters are on.' : 'Add a free TMDB API key in Admin to switch posters on.' };
     setSetting('poster_provider', setting);
     audit_('poster-key', 'Settings', 'poster_provider', null, { enabled: !!key });
+    if (key) ensurePosterTrigger_();
     return { keySet: !!key, provider: setting };
   });
 }

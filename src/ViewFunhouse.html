@@ -112,7 +112,7 @@ if (typeof module !== 'undefined') module.exports = FunLogic;
 <script>
 /* The Funhouse: Horror Slot Machine and the Movie Night Generator. Nothing here is saved unless you schedule it. */
 (function () {
-  var TABS = [['slot', '🎰 Slot Machine'], ['night', '🎟️ Movie Night']];
+  var TABS = [['slot', '🎰 Slot Machine'], ['night', '🎟️ Movie Night'], ['bingo', '🎱 Horror Bingo']];
   var st = { tab: 'slot', pool: 'all', result: null, recent: [], mode: 'Beauty & Beast', bill: null, rolling: false };
 
   function filmMeta(a, M, f) {
@@ -167,7 +167,7 @@ if (typeof module !== 'undefined') module.exports = FunLogic;
     return a.topBar('The Funhouse', 'Let fate pick. You only have to press play. 🎰') +
       '<div class="toolbar"><div class="seg">' + TABS.map(function (t) {
         return '<button data-ftab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
-      }).join('') + '</div></div>' + (st.tab === 'night' ? renderNight(a, M) : renderSlot(a, M));
+      }).join('') + '</div></div>' + (st.tab === 'night' ? renderNight(a, M) : st.tab === 'bingo' ? BingoView.render(a, M) : renderSlot(a, M));
   }
 
   /** A short reel animation, then the real (uniform) pick. */
@@ -207,6 +207,7 @@ if (typeof module !== 'undefined') module.exports = FunLogic;
   }
 
   function onClick(ev, a) {
+    if (st.tab === 'bingo' && BingoView.onClick(ev, a)) return true;
     var t = ev.target.closest('[data-ftab],[data-fpool],[data-fspin],[data-ftonight],[data-fmode],[data-freroll],[data-fbill]');
     if (!t) return false;
     if (ev.target.closest('[data-film]')) return false;

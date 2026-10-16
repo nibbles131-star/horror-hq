@@ -1,0 +1,210 @@
+<script>
+/* Pure Poster Wall logic, shared with the Node tests (tools/app_test.js). */
+var WallLogic = (function () {
+  var SHOW = [['watched', 'Watched'], ['seen', 'Watched + DNF'], ['todo', 'Unwatched, on a list'], ['all', 'Everything']];
+  var RATED = [['', 'Any rating'], ['9', '🖤 9+'], ['7', '7+'], ['rated', 'Rated'], ['unrated', 'Unrated']];
+  var SORT = [['rating', 'By rating'], ['year', 'By release year'], ['timeline', '⏳ Timeline'], ['title', 'By title'], ['shuffle', 'Shuffle']];
+
+  function rated(f) { return f.rating !== null && f.rating !== undefined; }
+
+  function films(M, o, HQ) {
+    var out = M.films.filter(function (f) {
+      if (o.show === 'watched' && f.status !== 'Watched') return false;
+      if (o.show === 'seen' && f.status !== 'Watched' && f.status !== 'DNF') return false;
+      if (o.show === 'todo' && !(f.status === 'Not watched' && HQ.isListed(M, f))) return false;
+      if (o.rated === 'rated' && !rated(f)) return false;
+      if (o.rated === 'unrated' && rated(f)) return false;
+      if ((o.rated === '9' || o.rated === '7') && !(rated(f) && f.rating >= Number(o.rated))) return false;
+      if (o.family && !HQ.families(M, f)[o.family]) return false;
+      if (o.decade && HQ.decadeOf(f.year) !== o.decade) return false;
+      if (o.country && f.countries.indexOf(o.country) < 0) return false;
+      if (o.postersOnly && !f.poster) return false;
+      return true;
+    });
+    var byKey = function (a, b) { return a.key.localeCompare(b.key); };
+    if (o.sort === 'rating') out.sort(function (a, b) { return (rated(b) ? b.rating : -1) - (rated(a) ? a.rating : -1) || byKey(a, b); });
+    else if (o.sort === 'year' || o.sort === 'timeline') out.sort(function (a, b) { return (a.year || 9999) - (b.year || 9999) || byKey(a, b); });
+    else if (o.sort === 'shuffle') out = shuffle(out, o.seed || 1);
+    else out.sort(byKey);
+    return out;
+  }
+
+  /** Deterministic shuffle so re-renders don't reshuffle under your cursor. */
+  function shuffle(arr, seed) {
+    var a = arr.slice(), s = seed;
+    for (var i = a.length - 1; i > 0; i--) {
+      s = (s * 9301 + 49297) % 233280;
+      var j = Math.floor(s / 233280 * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  /** Splits a sorted list into labelled shelves (rating or decade); one unlabelled shelf otherwise. */
+  function shelves(list, sort, HQ) {
+    if (sort !== 'rating' && sort !== 'year') return [{ label: '', films: list }];
+    var out = [], cur = null;
+    list.forEach(function (f) {
+      var label = sort === 'year' ? (HQ.decadeOf(f.year) || 'Year unknown')
+        : (rated(f) ? f.rating + ' · ' + HQ.verdict(f.rating).label : 'Unrated');
+      if (!cur || cur.label !== label) { cur = { label: label, films: [] }; out.push(cur); }
+      cur.films.push(f);
+    });
+    return out;
+  }
+
+  /** Release-year strip: one column per year with films, gaps marked, and which decades are being neglected. */
+  function timeline(list) {
+    var byYear = {};
+    list.forEach(function (f) { if (f.year) (byYear[f.year] = byYear[f.year] || []).push(f); });
+    var years = Object.keys(byYear).map(Number).sort(function (a, b) { return a - b; });
+    var cols = [], busiest = null, perDecade = {};
+    years.forEach(function (y, i) {
+      if (i && y - years[i - 1] > 1) cols.push({ gap: [years[i - 1] + 1, y - 1] });
+      cols.push({ year: y, films: byYear[y] });
+      if (!busiest || byYear[y].length > busiest.n) busiest = { year: y, n: byYear[y].length };
+      var d = Math.floor(y / 10) * 10;
+      perDecade[d] = (perDecade[d] || 0) + byYear[y].length;
+    });
+    var neglected = [];
+    if (years.length) {
+      for (var d = Math.floor(years[0] / 10) * 10; d <= Math.floor(years[years.length - 1] / 10) * 10; d += 10) {
+        if ((perDecade[d] || 0) <= 1) neglected.push({ decade: d + 's', n: perDecade[d] || 0 });
+      }
+    }
+    return { cols: cols, busiest: busiest, perDecade: perDecade, neglected: neglected, undated: list.length - years.reduce(function (n, y) { return n + byYear[y].length; }, 0) };
+  }
+
+  return { SHOW: SHOW, RATED: RATED, SORT: SORT, films: films, shelves: shelves, shuffle: shuffle, timeline: timeline };
+})();
+if (typeof module !== 'undefined') module.exports = WallLogic;
+</script>
+<style>
+  .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card, 140px), 1fr)); gap: 16px 14px; }
+  .pwc { position: relative; cursor: pointer; aspect-ratio: 2 / 3; border-radius: 9px; overflow: hidden; background: linear-gradient(160deg, #3a0c10, #10050a);
+    box-shadow: 0 8px 22px #000c, 0 0 0 1px #ffffff10; transition: transform .18s, box-shadow .18s; }
+  .pwc:hover { transform: translateY(-4px) rotate(-.6deg) scale(1.03); box-shadow: 0 14px 30px #000e, 0 0 0 2px var(--blood2), 0 0 26px #e3242b77; z-index: 2; }
+  .pwc img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pwc.dnf img { filter: grayscale(.85) contrast(1.1); }
+  .pwc .noimg { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 12px;
+    font-family: var(--display); font-size: 19px; line-height: 1.1; color: var(--text); text-shadow: 0 0 12px #e3242b66;
+    background: repeating-linear-gradient(135deg, #1a0709 0 10px, #15060a 10px 20px); }
+  .pwc .noimg small { font-family: var(--type); font-size: 11px; color: var(--muted); margin-top: 8px; text-shadow: none; }
+  .pwc .drop { position: absolute; top: 7px; right: 7px; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg);
+    display: grid; place-items: center; background: radial-gradient(circle at 35% 30%, var(--blood3), var(--blood) 60%, var(--gore)); box-shadow: 0 2px 8px #000c; }
+  .pwc .drop b { transform: rotate(45deg); font-weight: 800; font-size: 13px; color: #fff; text-shadow: 0 1px 0 #0008; }
+  .pwc .tag { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 800; letter-spacing: 1px; background: #000b; border: 1px solid var(--blood2); color: var(--blood3); padding: 1px 6px; border-radius: 4px; }
+  .pwc .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 9px 8px; font-size: 12px; font-weight: 600; line-height: 1.25;
+    background: linear-gradient(transparent, #000e 55%); opacity: 0; transform: translateY(6px); transition: opacity .15s, transform .15s; }
+  .pwc:hover .cap { opacity: 1; transform: none; }
+  .pwc .cap span { display: block; color: var(--muted); font-weight: 500; font-size: 11px; }
+  .shelf { margin: 26px 0 12px; display: flex; align-items: baseline; gap: 12px; }
+  .shelf h3 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 28px; letter-spacing: 1px; color: var(--blood2); text-shadow: 0 0 16px #e3242b55; }
+  .shelf .line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line2), transparent); }
+  .sizer button { min-width: 34px; }
+  .tl { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 0 4px 18px; position: relative; }
+  .tl .yr { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; width: calc(var(--card, 140px) * .62); }
+  .tl .yl { position: relative; width: 100%; text-align: center; font-family: var(--display); font-size: 22px; color: var(--text); padding-bottom: 10px; border-bottom: 3px solid var(--blood); }
+  .tl .yl::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 13px; height: 13px; margin-left: -6.5px; border-radius: 50%; background: var(--blood2); box-shadow: 0 0 12px var(--blood2); }
+  .tl .yr.dec .yl { color: var(--blood2); text-shadow: 0 0 12px #e3242b88; }
+  .tl .yr .pwc { width: 100%; }
+  .tl .gp { flex: none; align-self: stretch; width: 54px; display: flex; flex-direction: column; align-items: center; color: var(--faint); font-size: 10px; text-align: center; font-family: var(--type); }
+  .tl .gp .yl { font-size: 12px; color: var(--faint); border-bottom: 3px dashed var(--line2); font-family: var(--type); padding-top: 9px; }
+  .tl .gp .yl::after { display: none; }
+  .tl .gp span { margin-top: 18px; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 1px; }
+</style>
+<script>
+/* Poster Wall: every film as a poster, filtered and shelved by rating or decade. Click a poster for the film drawer. */
+(function () {
+  var st = { show: 'watched', rated: '', family: '', decade: '', country: '', sort: 'rating', size: 140, postersOnly: false, seed: 1, limit: 240 };
+  var SIZES = [['S', 104], ['M', 140], ['L', 190]];
+  var FAMS = ['Yearly', 'Seasonal', 'Curated', 'Classics', 'Bestiary', 'Alphabet', 'Franchise', 'Bubblegum'];
+
+  function card(a, f) {
+    var M = a.model();
+    var r = f.rating !== null && f.rating !== undefined;
+    return '<div class="pwc' + (f.status === 'DNF' ? ' dnf' : '') + '" data-film="' + a.esc(f.id) + '" title="' + a.esc(f.key) + '">' +
+      (f.poster ? '<img loading="lazy" src="' + a.esc(f.poster) + '" alt="' + a.esc(f.title) + '">'
+        : '<div class="noimg">' + a.esc(f.title) + '<small>' + a.esc(f.year || '') + '</small></div>') +
+      (f.status === 'DNF' ? '<span class="tag">DNF</span>' : '') +
+      (r ? '<span class="drop"><b>' + f.rating + '</b></span>' : '') +
+      '<div class="cap">' + a.esc(f.title) + '<span>' + a.esc(f.year || '') + (r ? ' · ' + a.esc(HQ.verdict(f.rating).label) : '') + '</span></div></div>';
+  }
+
+  function render(a) {
+    var M = a.model();
+    var list = WallLogic.films(M, st, HQ);
+    var withPosters = list.filter(function (f) { return f.poster; }).length;
+    var decades = {}, countries = {};
+    M.films.forEach(function (f) { if (f.year) decades[HQ.decadeOf(f.year)] = 1; f.countries.forEach(function (c) { countries[c] = 1; }); });
+    var shown = list.slice(0, st.limit);
+    var shelves = st.sort === 'timeline' ? null : WallLogic.shelves(shown, st.sort, HQ);
+    var noKey = !(M.raw.posters && M.raw.posters.enabled);
+
+    return a.topBar('Poster Wall', 'Your horror history, one poster at a time. Hover for the verdict, click to open. 🖼️') +
+      (noKey ? '<div class="panel" style="margin-bottom:16px">No TMDB key yet, so this is all title cards. Add one in <a class="film-link" data-nav="admin">Admin › Posters</a>.</div>' : '') +
+      '<div class="toolbar">' +
+        '<select data-wall="show">' + WallLogic.SHOW.map(opt(a, st.show)).join('') + '</select>' +
+        '<select data-wall="rated">' + WallLogic.RATED.map(opt(a, st.rated)).join('') + '</select>' +
+        '<select data-wall="family">' + a.options(FAMS, st.family, 'Any family') + '</select>' +
+        '<select data-wall="decade">' + a.options(Object.keys(decades).sort(), st.decade, 'Any decade') + '</select>' +
+        '<select data-wall="country">' + a.options(Object.keys(countries).sort(), st.country, 'Any country') + '</select>' +
+        '<select data-wall="sort">' + WallLogic.SORT.map(opt(a, st.sort)).join('') + '</select>' +
+        (st.sort === 'shuffle' ? '<button class="btn" data-wallshuffle>🎲 Again</button>' : '') +
+        '<label class="small muted"><input type="checkbox" data-wall="postersOnly"' + (st.postersOnly ? ' checked' : '') + '> Posters only</label>' +
+        '<span class="grow"></span><span class="seg sizer">' + SIZES.map(function (s) {
+          return '<button data-wallsize="' + s[1] + '" class="' + (st.size === s[1] ? 'on' : '') + '">' + s[0] + '</button>';
+        }).join('') + '</span>' +
+      '</div>' +
+      '<div class="muted small">' + list.length + ' films · ' + withPosters + ' with posters</div>' +
+      (list.length && st.sort === 'timeline' ? renderTimeline(a, list) :
+      list.length ? '<div style="--card:' + st.size + 'px">' + shelves.map(function (sh) {
+        return (sh.label ? '<div class="shelf"><h3>' + a.esc(sh.label) + '</h3><span class="muted small">' + sh.films.length + '</span><span class="line"></span></div>' : '<div style="height:14px"></div>') +
+          '<div class="wall">' + sh.films.map(function (f) { return card(a, f); }).join('') + '</div>';
+      }).join('') + '</div>' : '<div class="panel empty">Nothing on the wall with those filters. Loosen something.</div>') +
+      (st.sort !== 'timeline' && list.length > st.limit ? '<div style="text-align:center;margin-top:24px"><button class="btn primary" data-wallmore>Show ' + Math.min(240, list.length - st.limit) + ' more (' + (list.length - st.limit) + ' left)</button></div>' : '');
+  }
+
+  function renderTimeline(a, list) {
+    var t = WallLogic.timeline(list);
+    var dec = Object.keys(t.perDecade).map(Number).sort();
+    return '<div class="panel" style="margin:12px 0 18px"><h2>⏳ Your horror through time</h2>' +
+      '<div class="chips" style="margin-bottom:8px">' + dec.map(function (d) { return '<span class="chip">' + d + 's · <b>' + t.perDecade[d] + '</b></span>'; }).join('') + '</div>' +
+      (t.busiest ? '<div class="small">Busiest year: <b>' + t.busiest.year + '</b> with ' + t.busiest.n + ' films.</div>' : '') +
+      (t.neglected.length ? '<div class="small" style="margin-top:4px">Neglected decades: ' + t.neglected.map(function (n) {
+        return '<b style="color:var(--blood3)">' + n.decade + '</b> (' + (n.n ? 'just 1' : 'nothing') + ')';
+      }).join(', ') + '. They miss you.</div>' : '<div class="small" style="margin-top:4px">No decade left behind. Respect.</div>') +
+      (t.undated ? '<div class="small faint" style="margin-top:4px">' + t.undated + ' films have no year and sit this one out.</div>' : '') + '</div>' +
+      '<div class="tl" style="--card:' + st.size + 'px">' + t.cols.map(function (c) {
+        if (c.gap) return '<div class="gp"><div class="yl">…</div><span>' + (c.gap[0] === c.gap[1] ? c.gap[0] : c.gap[0] + '–' + c.gap[1]) + ' · nothing</span></div>';
+        return '<div class="yr' + (c.year % 10 === 0 ? ' dec' : '') + '"><div class="yl">' + c.year + '</div>' + c.films.map(function (f) { return card(a, f); }).join('') + '</div>';
+      }).join('') + '</div>';
+  }
+
+  function opt(a, cur) {
+    return function (o) { return '<option value="' + a.esc(o[0]) + '"' + (cur === o[0] ? ' selected' : '') + '>' + a.esc(o[1]) + '</option>'; };
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-wallsize],[data-wallmore],[data-wallshuffle]');
+    if (!t) return false;
+    if (t.dataset.wallsize) st.size = Number(t.dataset.wallsize);
+    if (t.dataset.wallmore !== undefined) st.limit += 240;
+    if (t.dataset.wallshuffle !== undefined) st.seed = Math.floor(Math.random() * 100000) + 1;
+    a.render();
+    return true;
+  }
+
+  function onChange(ev, a) {
+    var k = ev.target.dataset.wall;
+    if (!k) return false;
+    st[k] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
+    if (k === 'sort' && st.sort === 'shuffle') st.seed = Math.floor(Math.random() * 100000) + 1;
+    st.limit = 240;
+    a.render();
+    return true;
+  }
+
+  App.view('wall', { render: render, onClick: onClick, onChange: onChange });
+})();
+</script>

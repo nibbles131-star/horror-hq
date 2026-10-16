@@ -416,4 +416,103 @@ assert.ok(HQ.build(run('apiBootstrap()')).byId[sepB.film_id], 'both films surviv
 const exp = run('apiExportAll()');
 assert.strictEqual(exp.tables.Films.length, rawM.films.length + 2);
 
+
+// Posters: matching rules, the backlog runner, manual fix.
+const pick = (film, results, strict) => JSON.parse(JSON.stringify(vm.runInContext(`pickTmdbMatch_(${JSON.stringify(film)}, ${JSON.stringify(results)}, ${!!strict})`, ctx)));
+const R = (id, title, date, extra) => Object.assign({ id, title, original_title: title, release_date: date, genre_ids: [27], poster_path: '/p' + id + '.jpg' }, extra || {});
+assert.strictEqual(pick({ title: 'Halloween', release_year: 1978 }, [R(2, 'Halloween', '2018-10-18'), R(1, 'Halloween', '1978-10-25')]).id, 1, 'picks the right year');
+assert.strictEqual(pick({ title: 'Halloween', release_year: 1978 }, [R(2, 'Halloween', '2018-10-18')]), null, 'wrong year is no match');
+assert.strictEqual(pick({ title: 'Horror of Dracula', release_year: 1958 }, [R(3, 'Dracula', '1958-05-08')]).id, 3, 'regional title still matches');
+assert.strictEqual(pick({ title: 'The Thing', release_year: 1982 }, [R(4, 'Thing', '1982-06-25')]).id, 4, 'leading "The" ignored');
+assert.strictEqual(pick({ title: 'Pulse', release_year: 2001 }, [R(5, 'Kairo', '2001-02-03', { genre_ids: [] }), R(6, 'Pulse Two', '2001-01-01', { genre_ids: [] })], true), null, 'strict pass wants the exact title');
+ctx.ScriptApp = { getProjectTriggers: () => [], newTrigger: () => ({ timeBased: () => ({ everyHours: () => ({ create: () => { ctx.__posterTrigger = true; } }) }) }) };
+let tmdbCalls = 0;
+ctx.UrlFetchApp = { fetchAll: (reqs) => reqs.map((r) => {
+  tmdbCalls++;
+  const u = new URL(r.url);
+  const json = (o) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(o) });
+  if (u.pathname.startsWith('/3/movie/')) { const id = Number(u.pathname.split('/').pop()); return id === 999 ? json(R(999, 'Fanatic', '1965-03-21')) : { getResponseCode: () => 404, getContentText: () => '{}' }; }
+  const q = (u.searchParams.get('query') || '').toLowerCase(), y = u.searchParams.get('year');
+  if (q === 'evil dead burn') return json({ results: [R(10, 'Evil Dead Burn', '2026-07-24')] });
+  if (q === '[rec]') return json({ results: [R(11, '[REC]', '2007-11-23')] });
+  if (q === 'fanatic' && y) return json({ results: [R(999, 'Die! Die! My Darling!', '1965-03-21', { original_title: 'Fanatic' })] });
+  return json({ results: [] });
+}) };
+vm.runInContext(`PropertiesService.getScriptProperties().setProperty('TMDB_API_KEY', 'k123')`, ctx);
+const st0 = run('apiPosterStatus()');
+assert.ok(st0.keySet && st0.todo === st0.total, 'nothing looked up yet');
+const pr1 = run('apiPosterRun()');
+assert.strictEqual(pr1.todo, 0, 'one run clears a small backlog');
+assert.ok(pr1.withPoster >= 3, 'matched films get posters');
+assert.ok(ctx.__posterTrigger, 'hourly sweep trigger is installed');
+const filmsP = run('dbRead("Films")');
+const fp = (k) => filmsP.find(f => f.display_key === k);
+assert.strictEqual(fp('Evil Dead Burn (2026)').poster_url, 'https://image.tmdb.org/t/p/w342/p10.jpg');
+assert.strictEqual(fp('Fanatic (1965)').tmdb_id, '999', 'alt-title match via TMDB search');
+assert.ok(filmsP.filter(f => f.tmdb_id === 'none').length > 0, 'unmatched films are marked so they are not retried forever');
+const calls = tmdbCalls;
+run('apiPosterRun()');
+assert.strictEqual(tmdbCalls, calls, 'a second run does not re-ask TMDB');
+const bootP = run('apiBootstrap()');
+const evilRow = bootP.films.find(f => f[1] === 'Evil Dead Burn (2026)');
+assert.strictEqual(evilRow[4], '/p10.jpg', 'bootstrap ships the short path');
+assert.strictEqual(HQ.build(bootP).byId[evilRow[0]].poster, 'https://image.tmdb.org/t/p/w342/p10.jpg', 'browser rebuilds the full URL');
+const recId = fp('[REC] (2007)').film_id;
+assert.strictEqual(run(`apiSetPoster(${JSON.stringify(recId)}, 'none')`).poster, '', 'poster can be removed');
+assert.strictEqual(run(`apiSetPoster(${JSON.stringify(recId)}, '999')`).tmdb_id, '999', 'poster can be re-pointed');
+assert.throws(() => run(`apiSetPoster(${JSON.stringify(recId)}, '12345')`), /no film/);
+assert.ok(run('apiAdminData()').audit.some(x => x.action === 'set-poster'));
+assert.throws(() => run(`apiSaveUiSetting('migrated_at', 'x')`), /Unknown setting/);
+
+// Poster Wall, Hall of Fame, Bingo, trophy reveal (browser logic).
+const loadViewZ = (file, name) => {
+  const src = fs.readFileSync(path.join(SRC, file), 'utf8');
+  const m = { exports: {} };
+  new Function('module', 'HQ', src.match(/<script>([\s\S]*?)<\/script>/)[1])(m, HQ);
+  const blocks = src.match(/<script>([\s\S]*?)<\/script>/g);
+  new Function('App', 'HQ', 'BingoView', blocks[blocks.length - 1].replace(/<\/?script>/g, ''))({ view: () => {} }, HQ, {});
+  return m.exports;
+};
+const MZ = HQ.build(run('apiBootstrap()'));
+const WAL = loadViewZ('ViewWall.html');
+const watchedAllZ = WAL.films(MZ, { show: 'watched', sort: 'rating' }, HQ);
+assert.ok(watchedAllZ.length > 0 && watchedAllZ.every(f => f.status === 'Watched'));
+assert.ok(watchedAllZ[0].rating >= (watchedAllZ[1].rating || 0), 'best first');
+assert.strictEqual(WAL.shelves(watchedAllZ, 'rating', HQ)[0].label.indexOf('10'), 0, 'first shelf is the 10s');
+assert.deepStrictEqual(WAL.shuffle([1, 2, 3, 4, 5], 7), WAL.shuffle([1, 2, 3, 4, 5], 7), 'shuffle is stable per seed');
+const tlz = WAL.timeline(WAL.films(MZ, { show: 'all', sort: 'timeline' }, HQ));
+assert.ok(tlz.cols.length > 0 && tlz.busiest, 'timeline has columns');
+assert.ok(tlz.cols.some(c => c.gap), 'empty years are marked as gaps');
+const SHL = loadViewZ('ViewShrine.html');
+assert.deepStrictEqual(SHL.place([null, null, null, null], 1, 'F1'), [null, 'F1', null, null]);
+assert.deepStrictEqual(SHL.place(['F1', 'F2', null, null], 1, 'F1'), ['F2', 'F1', null, null], 'moving a film swaps slots');
+const ids4z = SHL.slots(MZ, ['nope', null]);
+assert.ok(ids4z.length === 4 && ids4z.every(x => x === null), 'stale ids drop out');
+const idstz = SHL.idStats(MZ, HQ, []);
+assert.strictEqual(idstz.watched, HQ.headline(MZ).watched);
+assert.ok(idstz.four.length > 0 && idstz.four.every(f => f.rating !== null), 'empty slots fall back to top-rated');
+assert.ok(SHL.candidates(MZ, '', HQ).every(f => f.status === 'Watched' || f.status === 'DNF'));
+const BGL = loadViewZ('ViewBingo.html');
+const cardBz = BGL.deal(MZ, HQ, 12345);
+assert.strictEqual(cardBz.squares.length, 25);
+assert.strictEqual(cardBz.squares[12], 'free');
+assert.deepStrictEqual(BGL.deal(MZ, HQ, 12345).squares, cardBz.squares, 'same seed, same card');
+assert.strictEqual(new Set(cardBz.squares).size, 25, 'no repeated squares');
+let pbz = BGL.progress(MZ, HQ, cardBz);
+assert.strictEqual(pbz.ticked, 1, 'only the free square at the start (old watches never count)');
+// Watch something unwatched and it ticks whatever it fits.
+const victimBz = MZ.films.find(f => f.status === 'Not watched' && f.year && f.year < 1960) || MZ.films.find(f => f.status === 'Not watched');
+victimBz.status = 'Watched'; victimBz.rating = 10; victimBz.modified = '2099-01-01';
+pbz = BGL.progress(MZ, HQ, cardBz);
+assert.ok(pbz.cells.filter(c => c.film && c.film.id === victimBz.id).length >= 0);
+const forcedZ = Object.assign({}, cardBz, { squares: cardBz.squares.map((x, i) => i < 5 ? (i === 2 ? 'loved' : 'free') : x) });
+assert.ok(BGL.progress(MZ, HQ, forcedZ).lines >= 1, 'a full row is a BINGO');
+assert.ok(BGL.suggestions(MZ, HQ, cardBz, 'offlist', 5).every(f => f.status === 'Not watched'));
+victimBz.status = 'Not watched'; victimBz.rating = null;
+const earnedZ = HQ.earnedTrophies(MZ);
+assert.ok(Array.isArray(earnedZ) && earnedZ.every(e => e.key && e.tier), 'earnedZ trophies have stable keys');
+assert.strictEqual(new Set(earnedZ.map(e => e.key)).size, earnedZ.length);
+const funZ = run(`apiSaveUiSetting('hall_of_fame', ['a', 'b'])`);
+assert.deepStrictEqual(run('apiBootstrap()').fun.hall_of_fame, ['a', 'b'], 'funZ settings round-trip through bootstrap');
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

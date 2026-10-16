@@ -10,6 +10,8 @@ var App = (function () {
   var drawerId = null;
   var lib = { q: '', status: '', rated: '', family: '', coll: '', decade: '', country: '', discovery: '', unlisted: false, sort: 'key', dir: 1, page: 0 };
   var victim = null;
+  var posterPick = null; // drawer "Change poster" state: { q, results, busy }
+  var posterTried = {};
   var PAGE = 100;
   var VIEWS = {};
 
@@ -19,7 +21,9 @@ var App = (function () {
     { id: 'collections', icon: '📚', label: 'Collections' },
     { id: 'planner', icon: '📅', label: 'Watch Planner' },
     { id: 'excavator', icon: '🔎', label: 'Horror Excavator' },
+    { id: 'wall', icon: '🖼️', label: 'Poster Wall' },
     { id: 'funhouse', icon: '🎰', label: 'The Funhouse' },
+    { id: 'shrine', icon: '🕯️', label: 'Hall of Fame' },
     { id: 'stats', icon: '🏆', label: 'Stats + Trophies' },
     { id: 'admin', icon: '🧰', label: 'Admin' }
   ];
@@ -57,6 +61,12 @@ var App = (function () {
   function filmLink(f, label) {
     return '<a class="film-link" data-film="' + esc(f.id) + '">' + esc(label || f.key) + '</a>';
   }
+  /** Poster thumbnail (or a coffin placeholder). size: '' | 'lg' | 'xl'. */
+  function thumb(f, size) {
+    var cls = 'thumb' + (size ? ' ' + size : '');
+    return f && f.poster ? '<img class="' + cls + '" loading="lazy" src="' + esc(f.poster) + '" alt="">' : '<span class="' + cls + '">⚰️</span>';
+  }
+  function postersOn() { return !!(M && M.raw.posters && M.raw.posters.enabled); }
   function fmtDate(iso) {
     if (!iso) return '';
     var d = new Date(iso + 'T12:00:00');
@@ -68,7 +78,9 @@ var App = (function () {
   // ------------------------------------------------------------------ shell
   function renderNav() {
     var rn = HQ.rateNext(M).length;
-    $('#nav').innerHTML = '<div class="brand">HORROR <span>HQ</span></div>' + SECTIONS.map(function (s) {
+    $('#nav').innerHTML = '<div class="brand">HORROR <span>HQ</span>' +
+      '<i class="drip" style="left:96px;--h:16px"></i><i class="drip" style="left:122px;--h:26px;animation-delay:.6s"></i><i class="drip" style="left:141px;--h:11px;animation-delay:1.3s"></i>' +
+      '<span class="sub">Abandon all spreadsheets</span></div>' + SECTIONS.map(function (s) {
       var badge = s.id === 'home' && (M.raw.openExceptions || rn) ? '<span class="badge">' + rn + '</span>' : '';
       return '<button data-nav="' + s.id + '" class="' + (view === s.id ? 'on' : '') + '">' + s.icon + ' ' + esc(s.label) + badge + '</button>';
     }).join('') + '<div class="foot">' + M.films.length + ' films known<br>build ' + esc(M.raw.version) + '</div>';
@@ -131,21 +143,22 @@ var App = (function () {
         '<div class="panel"><h2>📅 Coming up</h2>' +
           (soon.length ? soon.map(function (a) {
             var f = M.byId[a.film_id];
-            return '<div class="row"><span class="muted small" style="width:92px">' + esc(fmtDate(a.planned_date)) + '</span><span class="t">' +
+            return '<div class="row">' + thumb(f) + '<span class="muted small" style="width:84px">' + esc(fmtDate(a.planned_date)) + '</span><span class="t">' +
               (f ? filmLink(f) : esc(a.raw_film)) + '<br><span class="faint small">' + esc(a.occasion) + '</span></span>' + (f ? statusChip(f.status) : '') + '</div>';
           }).join('') : '<div class="empty">Nothing scheduled. Suspiciously calm.</div>') +
           (missed.length ? '<div class="small muted" style="margin-top:10px">⏰ ' + missed.length + ' scheduled films have slipped past their date unwatched.</div>' : '') +
         '</div>' +
         '<div class="panel"><h2>⭐ Rate these next <span class="act muted">' + rn.length + ' waiting</span></h2>' +
           (rn.length ? rn.slice(0, 7).map(function (f) {
-            return '<div class="row"><span class="t">' + filmLink(f) + '</span><button class="btn" data-quickrate="' + esc(f.id) + '">Rate</button></div>';
+            return '<div class="row">' + thumb(f) + '<span class="t">' + filmLink(f) + '</span><button class="btn" data-quickrate="' + esc(f.id) + '">Rate</button></div>';
           }).join('') : '<div class="empty">Every watched film has a rating. Who are you?</div>') +
           (rn.length > 7 ? '<div style="margin-top:10px"><button class="btn ghost" data-libpreset="ratenext">See all ' + rn.length + ' →</button></div>' : '') +
         '</div>' +
         '<div class="panel"><h2>🎰 Tonight\'s victim</h2>' +
-          (victim ? '<div class="victim">' + filmLink(victim) + '</div><div class="chips" style="margin-bottom:14px">' +
-            HQ.listNames(M, victim).slice(0, 4).map(function (n) { return '<span class="chip">' + esc(n) + '</span>'; }).join('') + '</div>' +
-            '<button class="btn primary" data-reroll>Reroll fate</button> <button class="btn" data-film="' + esc(victim.id) + '">Open</button>'
+          (victim ? '<div class="victimbox"><a class="film-link" data-film="' + esc(victim.id) + '">' + thumb(victim, 'xl') + '</a><div style="min-width:0">' +
+            '<div class="victim">' + filmLink(victim) + '</div><div class="chips" style="margin-bottom:14px">' +
+            HQ.listNames(M, victim).slice(0, 3).map(function (n) { return '<span class="chip">' + esc(n) + '</span>'; }).join('') + '</div>' +
+            '<button class="btn primary" data-reroll>Reroll fate</button> <button class="btn" data-film="' + esc(victim.id) + '">Open</button></div></div>'
             : '<div class="empty">Nothing unwatched. Impossible.</div>') +
           '<div class="small faint" style="margin-top:12px">Pool: all unwatched listed films. Rerolling never changes your data.</div>' +
         '</div>' +
@@ -159,7 +172,7 @@ var App = (function () {
           }).join('') : '<div class="empty">No franchise in progress.</div>') +
         '</div>' +
         '<div class="panel"><h2>🏅 Top-rated watches</h2>' +
-          (top.length ? top.map(function (f) { return '<div class="row"><span class="t">' + filmLink(f) + '</span>' + ratingCell(f) + '</div>'; }).join('')
+          (top.length ? top.map(function (f) { return '<div class="row">' + thumb(f) + '<span class="t">' + filmLink(f) + '</span>' + ratingCell(f) + '</div>'; }).join('')
             : '<div class="empty">No ratings yet.</div>') +
         '</div>' +
       '</div>' +
@@ -243,8 +256,8 @@ var App = (function () {
         '<th data-sort="status">Status' + arrow('status') + '</th><th data-sort="rating">Rating' + arrow('rating') + '</th><th>Lists</th><th>Country</th></tr></thead><tbody>' +
         slice.map(function (f) {
           var names = HQ.listNames(M, f);
-          return '<tr class="click" data-film="' + esc(f.id) + '"><td>' + esc(f.title) +
-            (f.memory && f.memory[0] ? ' <span class="small faint">' + esc(f.memory[0]) + '</span>' : '') + '</td><td>' + esc(f.year || '') + '</td><td>' +
+          return '<tr class="click" data-film="' + esc(f.id) + '"><td><span class="withthumb">' + thumb(f) + '<span>' + esc(f.title) +
+            (f.memory && f.memory[0] ? ' <span class="small faint">' + esc(f.memory[0]) + '</span>' : '') + '</span></span></td><td>' + esc(f.year || '') + '</td><td>' +
             statusChip(f.status) + '</td><td>' + ratingCell(f) + '</td><td class="small muted">' + esc(names.slice(0, 3).join(' • ')) +
             (names.length > 3 ? ' +' + (names.length - 3) : '') + '</td><td class="small muted">' + esc(f.countries.join(', ')) + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">No films match. Loosen a filter.</div>') +
@@ -268,11 +281,21 @@ var App = (function () {
 
   // ------------------------------------------------------------------ film drawer
   function openFilm(id) {
+    if (drawerId !== id) posterPick = null;
     drawerId = id;
     renderDrawer();
+    var f = M.byId[id];
+    // First time we meet a poster-less film, ask TMDB straight away (films added since the last sweep).
+    if (f && !f.poster && postersOn() && !posterTried[id]) {
+      posterTried[id] = true;
+      call('apiPosterForFilm', id).then(function (res) {
+        if (res.poster) { f.poster = res.poster; render(); }
+      }).catch(function () {});
+    }
   }
   function closeDrawer() {
     drawerId = null;
+    posterPick = null;
     $('#drawer').innerHTML = '';
   }
 
@@ -286,7 +309,8 @@ var App = (function () {
       return M.coll[a.coll].sort_order - M.coll[b.coll].sort_order;
     });
     var agenda = M.raw.agenda.filter(function (a) { return a.film_id === f.id; });
-    var poster = f.poster ? '<img class="poster" src="' + esc(f.poster) + '" alt="">' : '<div class="poster">🎞️</div>';
+    var poster = '<div class="posterbox">' + (f.poster ? '<img class="poster" src="' + esc(f.poster) + '" alt="">' : '<div class="poster">⚰️</div>') +
+      (postersOn() ? '<button class="btn ghost small" data-posterpick>' + (f.poster ? 'Wrong poster?' : 'Find poster') + '</button>' : '') + '</div>';
     var bubble = fams.Bubblegum;
 
     var franchise = entries.filter(function (e) { return M.coll[e.coll].family === 'Franchise'; }).map(function (e) {
@@ -306,6 +330,7 @@ var App = (function () {
         '<div class="chips" style="margin-top:10px">' + f.countries.map(function (c) { return '<span class="chip">' + esc(c) + '</span>'; }).join('') + '</div>' +
         (v ? '<div style="margin-top:10px;font-size:16px">' + esc(v.label) + '</div>' : '') +
       '</div></div>' +
+      renderPosterPick(f) +
 
       '<h3>Status</h3><div class="seg">' + statuses.map(function (s) {
         return '<button data-setstatus="' + esc(s) + '" class="' + (f.status === s ? 'on' : '') + '">' + esc(s) + '</button>';
@@ -353,6 +378,72 @@ var App = (function () {
       '</div>';
   }
 
+  function renderPosterPick(f) {
+    if (!posterPick) return '';
+    var p = posterPick;
+    return '<h3>Pick the right poster</h3><div class="toolbar"><input class="input" id="pp_q" value="' + esc(p.q) + '" style="flex:1">' +
+      '<button class="btn" data-postersearch>Search TMDB</button><button class="btn ghost" data-posterset="none">No poster</button>' +
+      '<button class="btn ghost" data-posterpick>Cancel</button></div>' +
+      (p.busy ? '<div class="empty">Digging through TMDB…</div>' : p.results ? (p.results.length ? '<div class="postergrid">' + p.results.map(function (r) {
+        return '<div class="pick" data-posterset="' + esc(r.id) + '">' + (r.poster ? '<img loading="lazy" src="' + esc(r.poster) + '" alt="">' : '<div class="noimg">⚰️</div>') +
+          '<div>' + esc(r.title) + '</div><div class="faint">' + esc(r.year || '?') + (r.horror ? ' 🩸' : '') + '</div></div>';
+      }).join('') + '</div>' : '<div class="empty">Nothing. Try the original title, or drop the year.</div>') : '');
+  }
+
+  function posterSearch(f) {
+    posterPick.busy = true;
+    renderDrawer();
+    var q = posterPick.q;
+    var m = q.match(/^(.*?)\s*\((\d{4})\)\s*$/);
+    call('apiPosterSearch', m ? m[1] : q, m ? Number(m[2]) : null).then(function (res) {
+      if (!posterPick) return;
+      posterPick.busy = false; posterPick.results = res; renderDrawer();
+    }).catch(function (e) { if (posterPick) { posterPick.busy = false; renderDrawer(); } toast(e.message, 'bad'); });
+  }
+
+  // ------------------------------------------------------------------ trophy unlock reveal
+  /** Compares earned trophies with the ones already celebrated and throws a party for the new ones. */
+  function checkTrophies() {
+    if (!M || !M.raw.trophies || !M.raw.trophies.length) return;
+    M.raw.fun = M.raw.fun || {};
+    var earned = HQ.earnedTrophies(M);
+    var keys = earned.map(function (e) { return e.key; });
+    var seen = M.raw.fun.trophies_seen;
+    if (!seen) { // first visit after this feature shipped: everything so far counts as already celebrated
+      M.raw.fun.trophies_seen = keys;
+      call('apiSaveUiSetting', 'trophies_seen', keys).catch(function () {});
+      return;
+    }
+    var fresh = earned.filter(function (e) { return seen.indexOf(e.key) < 0; });
+    if (!fresh.length) return;
+    M.raw.fun.trophies_seen = seen.concat(fresh.map(function (e) { return e.key; }));
+    call('apiSaveUiSetting', 'trophies_seen', M.raw.fun.trophies_seen).catch(function () {});
+    showReveal(fresh);
+  }
+
+  function showReveal(list) {
+    var t = list[list.length - 1];
+    var medal = { Bronze: '🥉', Silver: '🥈', Gold: '🥇', Platinum: '💀' }[t.tier] || '🏆';
+    var drops = '';
+    for (var i = 0; i < 26; i++) {
+      drops += '<i style="left:' + Math.round(Math.random() * 100) + '%;animation-delay:' + (Math.random() * 1.6).toFixed(2) + 's;animation-duration:' +
+        (1.6 + Math.random() * 1.6).toFixed(2) + 's;transform:scale(' + (0.6 + Math.random() * 0.9).toFixed(2) + ')"></i>';
+    }
+    var el = document.createElement('div');
+    el.className = 'reveal';
+    el.innerHTML = '<div class="rain">' + drops + '</div><div class="revealcard ' + esc(t.tier) + '"><div class="rays"></div>' +
+      '<div class="kicker">Trophy unlocked</div><div class="medal">' + (t.icon ? esc(t.icon) : medal) + '</div>' +
+      '<div class="rname">' + esc(t.name) + '</div><div class="rtier">' + esc(t.family === t.name ? t.tier : t.family + ' · ' + t.tier) + '</div>' +
+      '<div class="rdetail">' + esc(t.detail) + '</div>' +
+      (list.length > 1 ? '<div class="small muted" style="margin-top:8px">+ ' + (list.length - 1) + ' more: ' + esc(list.slice(0, -1).map(function (x) { return x.name + ' ' + x.tier; }).join(', ')) + '</div>' : '') +
+      '<div style="margin-top:18px"><button class="btn primary" data-revealok>Hell yeah 🩸</button> <button class="btn ghost" data-revealstats>See the cabinet</button></div></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-revealstats]')) { el.remove(); go('stats'); }
+      else if (ev.target.closest('[data-revealok]') || ev.target === el) el.remove();
+    });
+  }
+
   // ------------------------------------------------------------------ saving
   function applyState(f, s) {
     f.status = s.viewing_status;
@@ -375,6 +466,7 @@ var App = (function () {
       if (res.conflict) {
         toast('That film was changed elsewhere, so I reloaded it. Check and try again.', 'bad');
       } else {
+        checkTrophies();
         toast(label + ' • ' + f.title, 'ok', { label: 'Undo', fn: function () {
           var undo = {};
           Object.keys(patch).forEach(function (k) { undo[k] = before[k]; });
@@ -399,7 +491,8 @@ var App = (function () {
   function onClick(ev) {
     if (viewHandled('onClick', ev)) return;
     var t = ev.target.closest('[data-nav],[data-film],[data-close],[data-setstatus],[data-setrating],[data-setcunt],[data-savereaction],' +
-      '[data-reroll],[data-quickrate],[data-libpreset],[data-sort],[data-page],[data-libclear],[data-removeentry],[data-addentry],[data-addfilm],[data-suggest]');
+      '[data-reroll],[data-quickrate],[data-libpreset],[data-sort],[data-page],[data-libclear],[data-removeentry],[data-addentry],[data-addfilm],[data-suggest],' +
+      '[data-posterpick],[data-postersearch],[data-posterset]');
     if (!t) return;
     var d = t.dataset;
     var f = drawerId ? M.byId[drawerId] : null;
@@ -415,6 +508,18 @@ var App = (function () {
     if (d.libclear !== undefined) { lib = { q: '', status: '', rated: '', family: '', coll: '', decade: '', country: '', discovery: '', unlisted: false, sort: 'key', dir: 1, page: 0 }; return render(); }
     if (d.addfilm !== undefined) return addFilmPrompt();
     if (!f) return;
+    if (d.posterpick !== undefined) {
+      posterPick = posterPick ? null : { q: f.key, results: null, busy: false };
+      if (posterPick) return posterSearch(f);
+      return renderDrawer();
+    }
+    if (d.postersearch !== undefined) { posterPick.q = $('#pp_q').value; return posterSearch(f); }
+    if (d.posterset) {
+      return call('apiSetPoster', f.id, d.posterset).then(function (res) {
+        f.poster = res.poster; posterPick = null; render();
+        toast(res.poster ? 'Poster swapped 🖼️' : 'Poster removed', 'ok');
+      }).catch(function (e) { toast(e.message, 'bad'); });
+    }
     if (d.setstatus) {
       var patch = { viewing_status: d.setstatus };
       return saveState(f, patch, 'Marked ' + d.setstatus);
@@ -446,7 +551,7 @@ var App = (function () {
       if (!cid) return toast('Pick a list first.', 'bad');
       return call('apiAddEntry', cid, f.id, $('#addslot').value, '', false).then(function (rec) {
         HQ.addEntry(M, { id: rec.entry_id, coll: rec.collection_id, film: rec.film_id, slot: rec.slot_label, seq: rec.sequence, sourceNote: '', contextNote: '' });
-        HQ.sortEntries(M); render(); toast('Added to ' + M.coll[cid].name, 'ok');
+        HQ.sortEntries(M); render(); checkTrophies(); toast('Added to ' + M.coll[cid].name, 'ok');
       }).catch(function (err) { toast(err.message, 'bad'); });
     }
   }
@@ -461,7 +566,7 @@ var App = (function () {
         toast('Already known (' + res.via + '): ' + res.film.display_key, 'ok');
         return openFilm(res.film.film_id);
       }
-      var f = { id: res.film.film_id, key: res.film.display_key, title: res.film.title, year: res.film.release_year, poster: '',
+      var f = { id: res.film.film_id, key: res.film.display_key, title: res.film.title, year: res.film.release_year, poster: HQ.posterUrl(res.film.poster_url),
         status: 'Not watched', rating: null, reaction: '', version: 1, modified: res.state.modified_at, countries: [], memory: null, special: null, aliases: [] };
       f.search = HQ.normalise(f.key) + ' ' + f.id.toLowerCase();
       M.films.push(f); M.byId[f.id] = f;
@@ -502,7 +607,7 @@ var App = (function () {
     sugIndex = 0;
     box.hidden = false;
     box.innerHTML = hits.length ? hits.map(function (f, i) {
-      return '<div data-suggest="' + esc(f.id) + '" class="' + (i === 0 ? 'on' : '') + '"><span class="t">' + esc(f.key) + '</span>' + statusChip(f.status) + '</div>';
+      return '<div data-suggest="' + esc(f.id) + '" class="' + (i === 0 ? 'on' : '') + '">' + thumb(f) + '<span class="t">' + esc(f.key) + '</span>' + statusChip(f.status) + '</div>';
     }).join('') : '<div class="muted">No match. Add it from the Film Library.</div>';
   }
 
@@ -510,6 +615,7 @@ var App = (function () {
     var tag = (ev.target.tagName || '').toLowerCase();
     if (ev.key === '/' && tag !== 'input' && tag !== 'textarea') { ev.preventDefault(); var g = $('#gsearch'); if (g) g.focus(); return; }
     if (ev.key === 'Escape') { if (drawerId) closeDrawer(); var b = $('#suggest'); if (b) b.hidden = true; return; }
+    if (ev.target.id === 'pp_q' && ev.key === 'Enter' && posterPick) { posterPick.q = ev.target.value; return posterSearch(M.byId[drawerId]); }
     if (ev.target.id === 'gsearch') {
       var items = document.querySelectorAll('#suggest [data-suggest]');
       if (!items.length) return;
@@ -536,6 +642,7 @@ var App = (function () {
       }
       M = HQ.build(raw);
       render();
+      checkTrophies();
     }).catch(function (e) {
       $('#main').innerHTML = '<div class="loading">Couldn\'t open the crypt: ' + esc(e && e.message ? e.message : e) +
         '<br><span class="small">If the migration hasn\'t been run yet, run it from the 🎃 Horror HQ menu in the database sheet.</span></div>';
@@ -548,9 +655,9 @@ var App = (function () {
   /** What section files get to use. */
   var api = {
     model: function () { return M; }, $: $, esc: esc, call: call, toast: toast, statusChip: statusChip, ratingCell: ratingCell,
-    filmLink: filmLink, fmtDate: fmtDate, pct: pct, pick: pick, topBar: topBar, render: render, go: go, openFilm: openFilm,
-    options: options, refresh: function () {
-      return call('apiBootstrap').then(function (raw) { M = HQ.build(raw); render(); });
+    filmLink: filmLink, thumb: thumb, fmtDate: fmtDate, pct: pct, pick: pick, topBar: topBar, render: render, go: go, openFilm: openFilm,
+    options: options, checkTrophies: checkTrophies, refresh: function () {
+      return call('apiBootstrap').then(function (raw) { M = HQ.build(raw); render(); checkTrophies(); });
     }
   };
 

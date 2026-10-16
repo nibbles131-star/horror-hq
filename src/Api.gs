@@ -36,7 +36,7 @@ function apiBootstrap() {
   var migrated = null;
   try { migrated = getSetting('migrated_at', null); } catch (e) { migrated = null; }
   if (!migrated) return { needsMigration: true, version: PropertiesService.getScriptProperties().getProperty('INSTALLED_VERSION') || 'dev' };
-  var films = dbRead('Films').map(function (f) { return [f.film_id, f.display_key, f.title, f.release_year, f.poster_url || '']; });
+  var films = dbRead('Films').map(function (f) { return [f.film_id, f.display_key, f.title, f.release_year, String(f.poster_url || '').replace(POSTER_BASE_, '')]; });
   var state = {};
   dbRead('FilmState').forEach(function (s) { state[s.film_id] = [s.viewing_status, s.rating_10, s.reaction, s.version, s.modified_at]; });
   var collections = dbRead('Collections').map(stripRow_);
@@ -70,9 +70,21 @@ function apiBootstrap() {
     assignments: dbRead('ChallengeAssignments').map(stripRow_),
     openExceptions: openExceptions,
     posters: getSetting('poster_provider', null),
+    fun: { hall_of_fame: getSetting('hall_of_fame', []), bingo_card: getSetting('bingo_card', null), trophies_seen: getSetting('trophies_seen', null) },
     version: PropertiesService.getScriptProperties().getProperty('INSTALLED_VERSION') || 'dev',
     loadMs: Date.now() - t0
   };
+}
+
+/** Small per-app preferences for the fun pages (Hall of Fame picks, the Bingo card, trophies already celebrated). */
+var UI_SETTINGS_ = ['hall_of_fame', 'bingo_card', 'trophies_seen'];
+function apiSaveUiSetting(key, value) {
+  if (UI_SETTINGS_.indexOf(key) < 0) throw new Error('Unknown setting ' + key);
+  if (JSON.stringify(value).length > 45000) throw new Error('That is too big to save.');
+  return withWriteLock_(function () {
+    setSetting(key, value);
+    return value;
+  });
 }
 
 function validateRating_(r) {

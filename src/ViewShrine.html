@@ -1,0 +1,280 @@
+<script>
+/* Pure Hall of Fame logic, shared with the Node tests (tools/app_test.js). */
+var ShrineLogic = (function () {
+  var NUMERALS = ['I', 'II', 'III', 'IV'];
+
+  function rated(f) { return f.rating !== null && f.rating !== undefined; }
+
+  /** The four pinned films (null for an empty slot); stale ids from merged films drop out. */
+  function slots(M, ids) {
+    var out = [];
+    for (var i = 0; i < 4; i++) out.push((ids && ids[i] && M.byId[ids[i]]) || null);
+    return out;
+  }
+
+  /** Puts a film in a slot; if it already sits in another slot the two swap. */
+  function place(ids, slot, filmId) {
+    var next = [0, 1, 2, 3].map(function (i) { return (ids && ids[i]) || null; });
+    var was = next.indexOf(filmId);
+    if (was >= 0) next[was] = next[slot];
+    next[slot] = filmId;
+    return next;
+  }
+
+  /** Candidates for a slot: watched films, best first, filtered by the search box. */
+  function candidates(M, q, HQ) {
+    var pool = M.films.filter(function (f) { return f.status === 'Watched' || f.status === 'DNF'; });
+    if (q && q.trim()) return HQ.search(M, q, pool).slice(0, 40);
+    return pool.filter(rated).sort(function (a, b) { return b.rating - a.rating || a.key.localeCompare(b.key); }).slice(0, 40);
+  }
+
+  /** Everything the Horror ID card prints. */
+  function idStats(M, HQ, ids) {
+    var h = HQ.headline(M);
+    var watched = M.films.filter(function (f) { return f.status === 'Watched'; });
+    var dec = {}, ctry = {}, verdicts = {};
+    watched.forEach(function (f) {
+      if (f.year) dec[HQ.decadeOf(f.year)] = (dec[HQ.decadeOf(f.year)] || 0) + 1;
+      f.countries.forEach(function (c) { ctry[c] = (ctry[c] || 0) + 1; });
+      if (rated(f)) { var v = HQ.verdict(f.rating).label; verdicts[v] = (verdicts[v] || 0) + 1; }
+    });
+    var top = function (o) { return Object.keys(o).sort(function (a, b) { return o[b] - o[a] || a.localeCompare(b); })[0] || '—'; };
+    var four = slots(M, ids).filter(Boolean);
+    if (four.length < 4) {
+      M.films.filter(function (f) { return rated(f) && four.indexOf(f) < 0; })
+        .sort(function (a, b) { return b.rating - a.rating || a.key.localeCompare(b.key); })
+        .slice(0, 4 - four.length).forEach(function (f) { four.push(f); });
+    }
+    return {
+      watched: h.watched, rated: h.rated, avg: h.avg === null ? '—' : (Math.round(h.avg * 10) / 10) + '/10', loved: h.lovedPlus, buried: h.buried,
+      countries: Object.keys(ctry).length, decades: Object.keys(dec).length, favDecade: top(dec), topCountry: top(ctry),
+      verdict: top(verdicts), trophies: HQ.earnedTrophies(M).length, four: four
+    };
+  }
+
+  return { NUMERALS: NUMERALS, slots: slots, place: place, candidates: candidates, idStats: idStats };
+})();
+if (typeof module !== 'undefined') module.exports = ShrineLogic;
+</script>
+<style>
+  .altar { position: relative; padding: 30px 20px 0; border-radius: 16px; background: radial-gradient(ellipse at 50% 0%, #4a0a1088, transparent 70%), linear-gradient(180deg, #1a0709, #0d0405);
+    border: 1px solid var(--line2); box-shadow: inset 0 0 80px #000, 0 20px 50px #000a; overflow: hidden; }
+  .altar .row4 { display: flex; justify-content: center; align-items: flex-start; gap: 22px; flex-wrap: wrap; position: relative; z-index: 1; }
+  .shrine-slot { width: 172px; text-align: center; }
+  .shrine-slot .frame { position: relative; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; cursor: pointer; background: repeating-linear-gradient(135deg, #1a0709 0 10px, #14060a 10px 20px);
+    box-shadow: 0 0 0 3px #3b0a0e, 0 0 0 5px #6d071066, 0 14px 30px #000e, 0 0 40px #e3242b44; transition: transform .2s, box-shadow .2s; }
+  .shrine-slot .frame:hover { transform: translateY(-5px); box-shadow: 0 0 0 3px var(--blood2), 0 0 0 5px #e3242b66, 0 18px 34px #000e, 0 0 60px #e3242b88; }
+  .shrine-slot.sel .frame { box-shadow: 0 0 0 3px var(--blood3), 0 0 50px #ff4d55aa; }
+  .shrine-slot .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .shrine-slot .empty-slot { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); font-family: var(--type); font-size: 13px; padding: 10px; }
+  .shrine-slot .empty-slot b { display: block; font-size: 38px; margin-bottom: 6px; }
+  .shrine-slot .numeral { font-family: var(--display); font-size: 30px; color: var(--blood2); text-shadow: 0 0 14px #e3242b88; margin-bottom: 6px; }
+  .shrine-slot .who { margin-top: 10px; font-weight: 700; font-size: 13px; min-height: 54px; }
+  .shrine-slot .who span { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
+  .pedestal { height: 26px; margin: 8px -20px 0; background: linear-gradient(180deg, #2a0b0e, #120506); border-top: 1px solid var(--line2); }
+  .candle { position: relative; width: 16px; height: 70px; border-radius: 3px 3px 2px 2px; background: linear-gradient(90deg, #d8cfc0, #f4ede0 40%, #b9ad99); align-self: center; margin-top: 40px; box-shadow: inset 0 -6px 10px #0005; }
+  .candle.tall { height: 110px; }
+  .candle::before { content: ""; position: absolute; left: 50%; top: -22px; width: 12px; height: 20px; margin-left: -6px; border-radius: 50% 50% 35% 35% / 60% 60% 40% 40%;
+    background: radial-gradient(circle at 50% 75%, #fff8d0, #ffb43a 45%, #ff5a1f 70%, transparent 72%); filter: drop-shadow(0 0 10px #ffa52f) drop-shadow(0 0 22px #ff5a1f88); transform-origin: 50% 100%; animation: flame 1.3s ease-in-out infinite alternate; }
+  .candle::after { content: ""; position: absolute; left: 3px; top: 4px; width: 5px; height: 26px; border-radius: 3px; background: #f4ede0; }
+  @keyframes flame { 0% { transform: rotate(-3deg) scaleY(1); } 50% { transform: rotate(2deg) scaleY(1.12); } 100% { transform: rotate(-1deg) scaleY(.94); } }
+  .pantheon { display: flex; gap: 12px; overflow-x: auto; padding: 6px 2px 12px; }
+  .pantheon .p { flex: none; width: 92px; cursor: pointer; text-align: center; font-size: 11px; }
+  .pantheon .p .thumb { width: 92px; height: 138px; }
+  .idwrap { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; }
+  .idwrap canvas, .idwrap img.idcard { width: 100%; max-width: 420px; border-radius: 12px; box-shadow: 0 16px 40px #000c, 0 0 30px #e3242b44; }
+  @media (max-width: 900px) { .idwrap { grid-template-columns: 1fr; } }
+</style>
+<script>
+/* Hall of Fame: four pinned all-time favourites on a candle-lit altar, the 10/10 pantheon, and the Horror ID card maker. */
+(function () {
+  var st = { slot: null, q: '', name: '', card: null, busy: false };
+
+  function ids(M) { return (M.raw.fun && M.raw.fun.hall_of_fame) || []; }
+
+  function render(a) {
+    var M = a.model();
+    var four = ShrineLogic.slots(M, ids(M));
+    var tens = M.films.filter(function (f) { return f.rating === 10; }).sort(function (x, y) { return x.key.localeCompare(y.key); });
+    var nines = M.films.filter(function (f) { return f.rating === 9; }).length;
+
+    var altar = '<div class="altar"><div class="row4">' + '<span class="candle tall"></span><span class="candle"></span>' +
+      four.map(function (f, i) {
+        return '<div class="shrine-slot' + (st.slot === i ? ' sel' : '') + '"><div class="numeral">' + ShrineLogic.NUMERALS[i] + '</div>' +
+          '<div class="frame" data-hslot="' + i + '">' + (f && f.poster ? '<img src="' + a.esc(f.poster) + '" alt="">'
+            : '<div class="empty-slot">' + (f ? '<div><b>⚰️</b>' + a.esc(f.title) + '</div>' : '<div><b>🕯️</b>Choose a film worthy of worship</div>') + '</div>') + '</div>' +
+          '<div class="who">' + (f ? a.filmLink(f, f.title) + '<span>' + a.esc(f.year || '') + (f.rating ? ' · ' + f.rating + '/10' : '') + '</span>' : '&nbsp;') + '</div></div>';
+      }).join('') + '<span class="candle"></span><span class="candle tall"></span></div><div class="pedestal"></div></div>';
+
+    var picker = '';
+    if (st.slot !== null) {
+      var list = ShrineLogic.candidates(M, st.q, HQ);
+      picker = '<div class="panel" style="margin-top:16px"><h2>🕯️ Who goes in slot ' + ShrineLogic.NUMERALS[st.slot] + '?' +
+        '<span class="act">' + (four[st.slot] ? '<button class="btn ghost" data-hclear>Empty this slot</button>' : '') + '<button class="btn ghost" data-hcancel>Cancel</button></span></h2>' +
+        '<input class="input" id="hq_q" placeholder="Search your watched films" value="' + a.esc(st.q) + '" style="width:100%;margin-bottom:12px">' +
+        (list.length ? '<div class="postergrid">' + list.map(function (f) {
+          return '<div class="pick" data-hpick="' + a.esc(f.id) + '">' + (f.poster ? '<img loading="lazy" src="' + a.esc(f.poster) + '" alt="">' : '<div class="noimg">⚰️</div>') +
+            '<div>' + a.esc(f.title) + '</div><div class="faint">' + a.esc(f.year || '') + (f.rating ? ' · ' + f.rating + '/10' : '') + '</div></div>';
+        }).join('') + '</div>' : '<div class="empty">No watched film matches that.</div>') + '</div>';
+    }
+
+    var pantheon = '<div class="panel" style="margin-top:18px"><h2>👑 The Pantheon <span class="act muted">every 10/10 you\'ve ever handed out' +
+      (nines ? ' · ' + nines + ' 9s waiting at the gates' : '') + '</span></h2>' +
+      (tens.length ? '<div class="pantheon">' + tens.map(function (f) {
+        return '<div class="p" data-film="' + a.esc(f.id) + '">' + a.thumb(f) + '<div>' + a.esc(f.title) + '</div></div>';
+      }).join('') + '</div>' : '<div class="empty">No 10s yet. Standards are high in this crypt.</div>') + '</div>';
+
+    var id = '<div class="panel" style="margin-top:18px"><h2>🪪 Horror ID card</h2><div class="idwrap"><div>' +
+      '<p class="muted small">A shareable card with your stats and your four. Uses your Hall of Fame (or your top-rated films for empty slots).</p>' +
+      '<input class="input" id="hq_name" placeholder="Name on the card" value="' + a.esc(st.name) + '" style="width:100%;margin-bottom:10px">' +
+      '<button class="btn primary" data-hcard' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Summoning…' : st.card ? 'Remake card' : 'Make my card') + '</button> ' +
+      (st.card ? '<a class="btn" download="horror-hq-id.png" href="' + st.card.url + '">⬇ Download</a>' : '') +
+      (st.card && st.card.note ? '<div class="small faint" style="margin-top:8px">' + a.esc(st.card.note) + '</div>' : '') +
+      '</div><div>' + (st.card ? '<img class="idcard" src="' + st.card.url + '" alt="Horror ID card">' : '<div class="empty">Your card appears here.</div>') + '</div></div></div>';
+
+    return a.topBar('Hall of Fame', 'Four films. No ties. Choose wisely, the candles are watching. 🕯️') + altar + picker + pantheon + id;
+  }
+
+  function save(a, next) {
+    var M = a.model();
+    M.raw.fun = M.raw.fun || {};
+    var before = ids(M);
+    M.raw.fun.hall_of_fame = next;
+    a.render();
+    a.call('apiSaveUiSetting', 'hall_of_fame', next).catch(function (e) {
+      M.raw.fun.hall_of_fame = before; a.render(); a.toast('Not saved: ' + e.message, 'bad');
+    });
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-hslot],[data-hpick],[data-hclear],[data-hcancel],[data-hcard]');
+    if (!t) return false;
+    var d = t.dataset;
+    var M = a.model();
+    if (d.hslot !== undefined) { st.slot = st.slot === Number(d.hslot) ? null : Number(d.hslot); st.q = ''; a.render(); }
+    else if (d.hcancel !== undefined) { st.slot = null; a.render(); }
+    else if (d.hpick) {
+      var slot = st.slot; st.slot = null;
+      save(a, ShrineLogic.place(ids(M), slot, d.hpick));
+      a.toast(M.byId[d.hpick].title + ' enshrined 🕯️', 'ok');
+    } else if (d.hclear !== undefined) {
+      var next = ShrineLogic.place(ids(M), st.slot, null); st.slot = null; save(a, next);
+    } else if (d.hcard !== undefined) {
+      st.name = (a.$('#hq_name') || {}).value || '';
+      st.busy = true; a.render();
+      makeCard(ShrineLogic.idStats(M, HQ, ids(M)), st.name).then(function (card) {
+        st.card = card; st.busy = false; a.render();
+      }).catch(function (e) { st.busy = false; a.render(); a.toast('Card failed: ' + (e && e.message ? e.message : e), 'bad'); });
+    }
+    return true;
+  }
+
+  function onInput(ev, a) {
+    if (ev.target.id === 'hq_name') { st.name = ev.target.value; return true; }
+    if (ev.target.id !== 'hq_q') return false;
+    st.q = ev.target.value;
+    var pos = ev.target.selectionStart;
+    a.render();
+    var again = a.$('#hq_q'); again.focus(); again.setSelectionRange(pos, pos);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- the ID card (canvas)
+  function loadImg(src) {
+    return new Promise(function (resolve) {
+      if (!src) return resolve(null);
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      var done = false;
+      img.onload = function () { if (!done) { done = true; resolve(img); } };
+      img.onerror = function () { if (!done) { done = true; resolve(null); } };
+      setTimeout(function () { if (!done) { done = true; resolve(null); } }, 6000);
+      img.src = src;
+    });
+  }
+
+  function fontsReady() {
+    if (!document.fonts || !document.fonts.load) return Promise.resolve();
+    return Promise.all([document.fonts.load('80px Creepster'), document.fonts.load('24px "Special Elite"'), document.fonts.load('700 24px Inter')]).catch(function () {});
+  }
+
+  function makeCard(s, name) {
+    return fontsReady().then(function () {
+      return Promise.all(s.four.map(function (f) { return loadImg(f.poster); }));
+    }).then(function (imgs) {
+      var url, note = '';
+      try { url = draw(s, name, imgs).toDataURL('image/png'); }
+      catch (e) { url = draw(s, name, imgs.map(function () { return null; })).toDataURL('image/png'); note = 'The poster server would not share its images with the canvas, so the card uses title cards instead.'; }
+      return { url: url, note: note };
+    });
+  }
+
+  function draw(s, name, imgs) {
+    var W = 1080, H = 1350;
+    var c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var g = c.getContext('2d');
+    var DISPLAY = 'Creepster, fantasy', TYPE = '"Special Elite", "Courier New", monospace', SANS = 'Inter, Arial, sans-serif';
+    g.fillStyle = '#0a0405'; g.fillRect(0, 0, W, H);
+    var glow = g.createRadialGradient(W * 0.8, -100, 50, W * 0.8, -100, 900);
+    glow.addColorStop(0, 'rgba(160,12,24,.55)'); glow.addColorStop(1, 'rgba(160,12,24,0)');
+    g.fillStyle = glow; g.fillRect(0, 0, W, H);
+    // drips along the top
+    g.fillStyle = '#b0101b';
+    g.fillRect(0, 0, W, 18);
+    for (var x = 10; x < W; x += 34 + (x * 7) % 41) {
+      var len = 20 + (x * 13) % 70, w = 8 + (x * 3) % 10;
+      g.beginPath(); g.moveTo(x, 10); g.lineTo(x, 10 + len); g.arc(x + w / 2, 10 + len, w / 2, Math.PI, 0, true); g.lineTo(x + w, 10); g.fill();
+    }
+    g.strokeStyle = '#511816'; g.lineWidth = 4; g.strokeRect(24, 40, W - 48, H - 64);
+    g.textAlign = 'center';
+    g.fillStyle = '#e3242b'; g.shadowColor = 'rgba(227,36,43,.8)'; g.shadowBlur = 30;
+    g.font = '120px ' + DISPLAY; g.fillText('HORROR HQ', W / 2, 200);
+    g.shadowBlur = 0;
+    g.fillStyle = '#b39591'; g.font = '30px ' + TYPE; g.fillText('O F F I C I A L   S I C K O   I D', W / 2, 252);
+    g.fillStyle = '#ffffff'; g.font = '78px ' + DISPLAY; g.shadowColor = 'rgba(227,36,43,.6)'; g.shadowBlur = 18;
+    g.fillText(name ? name : 'Certified Horror Freak', W / 2, 350); g.shadowBlur = 0;
+    // the four
+    var pw = 220, ph = 330, gap = 26, x0 = (W - (pw * 4 + gap * 3)) / 2, y0 = 400;
+    s.four.slice(0, 4).forEach(function (f, i) {
+      var px = x0 + i * (pw + gap);
+      g.fillStyle = '#1d0a0c'; g.fillRect(px, y0, pw, ph);
+      if (imgs[i]) g.drawImage(imgs[i], px, y0, pw, ph);
+      else {
+        g.fillStyle = '#f3e6e3'; g.font = '30px ' + DISPLAY; wrap(g, f.title, px + pw / 2, y0 + ph / 2 - 20, pw - 24, 36);
+      }
+      g.strokeStyle = '#e3242b'; g.lineWidth = 3; g.strokeRect(px, y0, pw, ph);
+      g.fillStyle = '#e3242b'; g.font = '40px ' + DISPLAY; g.fillText(['I', 'II', 'III', 'IV'][i], px + pw / 2, y0 + ph + 48);
+    });
+    // stats
+    var stats = [['Films watched', s.watched], ['Average rating', s.avg], ['🖤 + 👑 verdicts', s.loved], ['Countries', s.countries],
+      ['Favourite decade', s.favDecade], ['Top country', s.topCountry], ['Trophies', s.trophies], ['Films buried', s.buried]];
+    stats.forEach(function (p, i) {
+      var col = i % 2, row = Math.floor(i / 2);
+      var cx = col ? W * 0.72 : W * 0.28, cy = 870 + row * 100;
+      g.fillStyle = '#b39591'; g.font = '700 22px ' + SANS; g.fillText(String(p[0]).toUpperCase(), cx, cy);
+      g.fillStyle = '#ffffff'; g.font = '50px ' + DISPLAY; g.fillText(fit(g, String(p[1]), 440), cx, cy + 52);
+    });
+    g.fillStyle = '#7c5c58'; g.font = '24px ' + TYPE;
+    g.fillText('Signature verdict: ' + s.verdict + '  ·  Issued ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + '  ·  Valid until death', W / 2, H - 60);
+    return c;
+  }
+
+  function fit(g, text, max) {
+    while (g.measureText(text).width > max && text.length > 4) text = text.slice(0, -2) + '…';
+    return text;
+  }
+
+  function wrap(g, text, cx, y, max, lh) {
+    var words = String(text).split(' '), line = '', lines = [];
+    words.forEach(function (w) {
+      var t = line ? line + ' ' + w : w;
+      if (g.measureText(t).width > max && line) { lines.push(line); line = w; } else line = t;
+    });
+    lines.push(line);
+    lines.slice(0, 5).forEach(function (l, i) { g.fillText(l, cx, y + i * lh - (Math.min(lines.length, 5) - 1) * lh / 2); });
+  }
+
+  App.view('shrine', { render: render, onClick: onClick, onInput: onInput });
+})();
+</script>

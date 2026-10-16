@@ -186,7 +186,23 @@ if (typeof module !== 'undefined') module.exports = AdminLogic;
   function renderPosters(a, M) {
     var d = st.data.poster, t = st.test;
     var sample = M.films.filter(function (f) { return f.year; })[0];
-    return '<p class="muted">Posters come from TMDB, which is free. This saves your key now; fetching posters for every film is the next feature to switch on. 🖼️</p>' +
+    var ps = st.posters, run = st.posterRun;
+    var pct = ps && ps.total ? Math.round((ps.total - ps.todo) / ps.total * 100) : 0;
+    var fetch = !d.keySet ? '' : '<div class="panel" style="margin-bottom:16px"><h2>🖼️ Fetch posters' +
+        '<span class="act"><button class="btn primary" data-adposterrun' + (run ? ' disabled' : '') + '>' + (run ? 'Fetching…' : ps && ps.todo ? 'Fetch ' + ps.todo + ' missing posters' : 'Check for new films') + '</button>' +
+        (run ? ' <button class="btn ghost" data-adposterstop>Stop</button>' : '') + '</span></h2>' +
+        (ps ? '<div class="bar" style="margin:6px 0 10px"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="small">' + ps.withPoster + ' with posters · ' + ps.todo + ' not looked up yet · ' + ps.notFound + ' TMDB couldn\'t match · ' + ps.noImage + ' matched but TMDB has no poster</div>' +
+          '<p class="small muted">Matching is by title and year, and it only accepts a confident match, because a wrong poster is worse than none. New films get theirs within the hour, or the moment you open them. ' +
+          'Fix any film from its drawer with <b>Wrong poster?</b></p>' +
+          (ps.missing.length ? '<details><summary class="small" style="cursor:pointer">' + ps.missing.length + ' films without a poster</summary><div style="max-height:320px;overflow:auto;margin-top:8px">' +
+            ps.missing.map(function (m) { return '<div class="row"><span class="t">' + a.esc(m[1]) + '</span><button class="btn ghost small" data-film="' + a.esc(m[0]) + '">Fix</button></div>'; }).join('') + '</div></details>' : '')
+          : '<div class="small muted">Counting…</div>') + '</div>';
+    if (d.keySet && !ps && !st.posterLoading) {
+      st.posterLoading = true;
+      a.call('apiPosterStatus').then(function (res) { st.posters = res; st.posterLoading = false; a.render(); }).catch(function () { st.posterLoading = false; });
+    }
+    return '<p class="muted">Posters come from TMDB, which is free. 🖼️</p>' + fetch +
       '<div class="panel"><h2>TMDB key <span class="act">' + (d.keySet ? '<span class="sev info">✅ saved</span>' : '<span class="sev warning">not set</span>') + '</span></h2>' +
         '<p class="small muted">Get one free at themoviedb.org → Settings → API. Either the API key or the read access token works. It\'s stored in the script\'s private properties, never in the sheet.</p>' +
         '<div class="toolbar"><input class="input" type="password" id="ad_tmdb" placeholder="' + (d.keySet ? 'Key saved. Paste a new one to replace it' : 'Paste your TMDB key') + '" style="width:420px">' +
@@ -231,11 +247,24 @@ if (typeof module !== 'undefined') module.exports = AdminLogic;
     st.data.exceptions = st.data.exceptions.map(function (e) { return e.exception_id === rec.exception_id ? rec : e; });
   }
 
+  /** Runs the backlog in ~25s slices until nothing is left, stalls twice, or Stop is pressed. */
+  function posterLoop(a, stalls) {
+    st.posterRun = true; a.render();
+    a.call('apiPosterRun').then(function (res) {
+      st.posters = res;
+      stalls = res.written ? 0 : stalls + 1;
+      if (st.posterRun && res.todo > 0 && stalls < 2) return posterLoop(a, stalls);
+      st.posterRun = false;
+      a.toast(res.todo ? 'Paused with ' + res.todo + ' left (TMDB is being slow). Press fetch again later.' : 'Posters done: ' + res.withPoster + ' films have faces now 🖼️', res.todo ? 'bad' : 'ok');
+      return a.refresh();
+    }).catch(function (e) { st.posterRun = false; a.render(); a.toast(e.message, 'bad'); });
+  }
+
   function fail(a) { return function (e) { st.busy = false; a.render(); a.toast(e.message, 'bad'); }; }
 
   function onClick(ev, a) {
     var t = ev.target.closest('[data-adtab],[data-adrefresh],[data-adretry],[data-adresolve],[data-adreopen],[data-adseparate],[data-admergepair],[data-adpick],' +
-      '[data-adpreview],[data-adswap],[data-admergego],[data-admergex],[data-adbackup],[data-adexport],[data-adsavekey],[data-adclearkey],[data-adtestkey],[data-adaudit]');
+      '[data-adpreview],[data-adswap],[data-admergego],[data-admergex],[data-adbackup],[data-adexport],[data-adsavekey],[data-adclearkey],[data-adtestkey],[data-adaudit],[data-adposterrun],[data-adposterstop]');
     if (!t) return false;
     if (ev.target.closest('[data-film]') && !t.hasAttribute('data-adpick')) return false;
     var d = t.dataset, M = a.model();
@@ -303,7 +332,7 @@ if (typeof module !== 'undefined') module.exports = AdminLogic;
     if (d.adsavekey !== undefined) {
       var key = (a.$('#ad_tmdb') || {}).value || '';
       if (!key.trim()) { a.toast('Paste the key first.', 'bad'); return true; }
-      a.call('apiSavePosterKey', key).then(function (res) { st.data.poster = res; st.test = null; a.render(); a.toast('TMDB key works and is saved 🖼️', 'ok'); }).catch(fail(a));
+      a.call('apiSavePosterKey', key).then(function (res) { st.data.poster = res; st.test = null; st.posters = null; M.raw.posters = res.provider; a.render(); a.toast('TMDB key works and is saved 🖼️', 'ok'); }).catch(fail(a));
       return true;
     }
     if (d.adclearkey !== undefined) {
@@ -315,6 +344,8 @@ if (typeof module !== 'undefined') module.exports = AdminLogic;
       a.call('apiTestPosterKey', s ? s.title : 'Halloween', s ? s.year : 1978).then(function (res) { st.test = res; a.render(); }).catch(fail(a));
       return true;
     }
+    if (d.adposterrun !== undefined) { posterLoop(a, 0); return true; }
+    if (d.adposterstop !== undefined) { st.posterRun = false; a.render(); return true; }
     if (d.adaudit) { st.openAudit[d.adaudit] = !st.openAudit[d.adaudit]; a.render(); return true; }
     return false;
   }
