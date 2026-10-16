@@ -162,4 +162,50 @@ assert.throws(() => vm.runInContext(`apiCreateCollection('Curated', 'folk horror
 assert.strictEqual(run(`apiUpdateCollection(${JSON.stringify(nc.collection_id)}, {name: 'Folk Horror', description: 'Wicker everything'})`).name, 'Folk Horror');
 assert.throws(() => vm.runInContext(`apiUpdateCollection(${JSON.stringify(ham.collection_id)}, {name: 'Hammer Films'})`, ctx), /locked/);
 
+// Watch Planner.
+const planSrc = fs.readFileSync(path.join(SRC, 'ViewPlanner.html'), 'utf8');
+const planMod = { exports: {} };
+new Function('module', 'HQ', planSrc.match(/<script>([\s\S]*?)<\/script>/)[1])(planMod, HQ);
+const PL = planMod.exports;
+assert.strictEqual(PL.occasionIcon('Halloween Countdown 2026'), '🎃');
+assert.strictEqual(PL.occasionIcon('Friday the 13th / Unlucky'), '1️⃣3️⃣');
+assert.strictEqual(PL.occasionIcon('Black Friday mini-list'), '🛍️');
+assert.strictEqual(PL.isBonus({ context_note: 'Bonus • Hooptober bonus film' }), true);
+assert.strictEqual(PL.eventStatus({ start_date: '2026-10-01', end_date: '2026-10-31' }, '2026-10-16').label, 'Running: day 16 of 31');
+assert.strictEqual(PL.eventStatus({ start_date: '2026-11-03', end_date: '2026-11-05' }, '2026-10-16').label, 'Starts in 18 days');
+assert.strictEqual(PL.eventStatus({ start_date: '2026-09-06', end_date: '2026-09-30' }, '2026-10-16').state, 'done');
+const M3 = HQ.build(run('apiBootstrap()'));
+const months = PL.calendarMonths(M3, '2026-10-16');
+assert.strictEqual(months[0].month, 8, 'calendar starts in September');
+const oct = months.find(m => m.month === 9);
+assert.strictEqual(oct.cells.findIndex(c => c && c.day === 1), 3, '1 Oct 2026 is a Thursday');
+assert.ok(oct.cells.find(c => c && c.today), 'today is marked');
+const occ = PL.occasionProgress(M3);
+assert.ok(occ.length >= 1 && occ.every(o => o.watched <= o.total));
+// Planner writes.
+const fid0 = M3.films[0].id;
+let ag = run(`apiSaveAgenda({ planned_date: '2026-10-31', film_id: ${JSON.stringify(fid0)}, occasion: 'Halloween Countdown 2026', context_note: 'Daily countdown' })`);
+assert.ok(/^S\d{5}$/.test(ag.schedule_id));
+ag = run(`apiSaveAgenda({ schedule_id: ${JSON.stringify(ag.schedule_id)}, planned_date: '31/10/2026', film_id: ${JSON.stringify(fid0)}, occasion: 'Halloween Countdown 2026' })`);
+assert.strictEqual(ag.planned_date, '2026-10-31', 'UK dates accepted');
+assert.throws(() => vm.runInContext(`apiSaveAgenda({ planned_date: 'soon', film_id: ${JSON.stringify(fid0)} })`, ctx), /real date/);
+run(`apiDeleteAgenda(${JSON.stringify(ag.schedule_id)})`);
+assert.throws(() => vm.runInContext(`apiSaveEventPlan({ name: 'Backwards', start_date: '2026-11-05', end_date: '2026-11-03' })`, ctx), /ends before/);
+const ep = run(`apiSaveEventPlan({ name: 'Bonfire Night mini-list', start_date: '2026-11-03', end_date: '2026-11-05', intended_films: '3' })`);
+assert.ok(ep.event_plan_id);
+const ch = run(`apiSaveChallenge({ title: 'Hooptober 2026' })`);
+const cr1 = run(`apiSaveCriterion({ challenge_id: ${JSON.stringify(ch.challenge_id)}, label: 'A 1970s film', required_count: 2 })`);
+const cr2 = run(`apiSaveCriterion({ challenge_id: ${JSON.stringify(ch.challenge_id)}, label: 'A sequel' })`);
+assert.strictEqual(cr2.required_count, 1, 'required defaults to 1');
+run(`apiAddAssignment(${JSON.stringify(cr1.criterion_id)}, ${JSON.stringify(fid0)}, '')`);
+run(`apiAddAssignment(${JSON.stringify(cr2.criterion_id)}, ${JSON.stringify(fid0)}, '')`);
+assert.throws(() => vm.runInContext(`apiAddAssignment(${JSON.stringify(cr1.criterion_id)}, ${JSON.stringify(fid0)}, '')`, ctx), /already covers/);
+const M4 = HQ.build(run('apiBootstrap()'));
+const board = PL.challengeBoard(M4, ch.challenge_id);
+assert.strictEqual(board.criteria, 2);
+assert.strictEqual(board.coveredCriteria, 1, 'one film covers the sequel criterion; the 1970s one needs two');
+assert.strictEqual(Math.round(board.completion * 100), 67, '(1 + 1) / (2 + 1) like the old sheet formula');
+assert.strictEqual(board.assignments, 2);
+assert.strictEqual(run(`apiDeleteCriterion(${JSON.stringify(cr1.criterion_id)})`).assignments, 1);
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

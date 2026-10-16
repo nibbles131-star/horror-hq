@@ -1,0 +1,404 @@
+<script>
+/* Pure planner maths, shared with the Node tests (tools/app_test.js). */
+var PlanLogic = (function () {
+  var OCCASION_ICONS = [
+    [/halloween/i, '🎃'], [/bonfire/i, '🔥'], [/friday the 13th|unlucky/i, '1️⃣3️⃣'], [/thanksgiving/i, '🦃'],
+    [/black friday/i, '🛍️'], [/new year/i, '✨'], [/winter|christmas|xmas/i, '❄️'], [/hooptober/i, '🍂']
+  ];
+
+  function occasionIcon(occasion) {
+    for (var i = 0; i < OCCASION_ICONS.length; i++) if (OCCASION_ICONS[i][0].test(occasion || '')) return OCCASION_ICONS[i][1];
+    return '🎬';
+  }
+
+  function isBonus(a) { return /^\s*bonus/i.test(a.context_note || ''); }
+
+  function daysBetween(a, b) {
+    return Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10))) / 86400000);
+  }
+
+  /** Watched / scheduled per occasion, like the old "Halloween progress 0/31" cells. */
+  function occasionProgress(M) {
+    var by = {};
+    M.raw.agenda.forEach(function (a) {
+      var k = a.occasion || 'Unlabelled';
+      var o = by[k] = by[k] || { occasion: k, total: 0, watched: 0, first: a.planned_date, last: a.planned_date };
+      o.total++;
+      var f = M.byId[a.film_id];
+      if (f && f.status === 'Watched') o.watched++;
+      if (a.planned_date && (!o.first || a.planned_date < o.first)) o.first = a.planned_date;
+      if (a.planned_date && a.planned_date > o.last) o.last = a.planned_date;
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return String(a.first).localeCompare(String(b.first)); });
+  }
+
+  /** Month grids (Mon-first) covering every scheduled date plus today. */
+  function calendarMonths(M, today) {
+    var dates = M.raw.agenda.map(function (a) { return a.planned_date; }).filter(String).concat([today]).sort();
+    var byDate = {};
+    M.raw.agenda.forEach(function (a) { (byDate[a.planned_date] = byDate[a.planned_date] || []).push(a); });
+    Object.keys(byDate).forEach(function (d) { byDate[d].sort(function (a, b) { return a.sort_order - b.sort_order; }); });
+    var y = +dates[0].slice(0, 4), m = +dates[0].slice(5, 7) - 1;
+    var endY = +dates[dates.length - 1].slice(0, 4), endM = +dates[dates.length - 1].slice(5, 7) - 1;
+    var months = [];
+    while (y < endY || (y === endY && m <= endM)) {
+      var first = new Date(Date.UTC(y, m, 1));
+      var lead = (first.getUTCDay() + 6) % 7;
+      var days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      var cells = [];
+      for (var i = 0; i < lead; i++) cells.push(null);
+      for (var d = 1; d <= days; d++) {
+        var iso = y + '-' + ('0' + (m + 1)).slice(-2) + '-' + ('0' + d).slice(-2);
+        cells.push({ iso: iso, day: d, items: byDate[iso] || [], today: iso === today });
+      }
+      while (cells.length % 7) cells.push(null);
+      months.push({ year: y, month: m, cells: cells });
+      m++; if (m > 11) { m = 0; y++; }
+    }
+    return months;
+  }
+
+  /** Where an event plan stands today. */
+  function eventStatus(plan, today) {
+    if (!plan.start_date || !plan.end_date) return { state: 'undated', label: 'No dates' };
+    if (today < plan.start_date) { var n = daysBetween(today, plan.start_date); return { state: 'upcoming', label: 'Starts in ' + n + ' day' + (n === 1 ? '' : 's') }; }
+    if (today > plan.end_date) return { state: 'done', label: 'Finished' };
+    var len = daysBetween(plan.start_date, plan.end_date) + 1, day = daysBetween(plan.start_date, today) + 1;
+    return { state: 'running', label: 'Running: day ' + day + ' of ' + len };
+  }
+
+  /** Challenge Builder board, same maths as the old sheet. */
+  function challengeBoard(M, challengeId) {
+    var crits = M.raw.criteria.filter(function (c) { return c.challenge_id === challengeId; })
+      .sort(function (a, b) { return a.display_order - b.display_order; });
+    var rows = crits.map(function (c) {
+      var as = M.raw.assignments.filter(function (a) { return a.criterion_id === c.criterion_id; });
+      var seen = {}, unique = 0, dup = {};
+      as.forEach(function (a) {
+        if (!a.film_id) return;
+        if (seen[a.film_id]) dup[a.film_id] = true; else { seen[a.film_id] = true; unique++; }
+      });
+      var req = Number(c.required_count) || 1;
+      return { crit: c, assignments: as, covered: unique, required: req, missing: Math.max(0, req - unique), dup: dup,
+        done: unique >= req };
+    });
+    var reqSum = rows.reduce(function (s, r) { return s + r.required; }, 0);
+    var covSum = rows.reduce(function (s, r) { return s + Math.min(r.covered, r.required); }, 0);
+    return { rows: rows, criteria: rows.length, coveredCriteria: rows.filter(function (r) { return r.done; }).length,
+      completion: reqSum ? covSum / reqSum : 0,
+      assignments: rows.reduce(function (s, r) { return s + r.assignments.length; }, 0) };
+  }
+
+  return { occasionIcon: occasionIcon, isBonus: isBonus, daysBetween: daysBetween, occasionProgress: occasionProgress,
+    calendarMonths: calendarMonths, eventStatus: eventStatus, challengeBoard: challengeBoard };
+})();
+if (typeof module !== 'undefined') module.exports = PlanLogic;
+</script>
+<style>
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal .dow { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 2px 6px; }
+  .cal .day { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; min-height: 86px; padding: 6px 7px; font-size: 12px; cursor: pointer; }
+  .cal .day:hover { border-color: var(--line2); }
+  .cal .day.blank { background: transparent; border-color: transparent; cursor: default; }
+  .cal .day.today { border-color: var(--blood2); box-shadow: inset 0 0 0 1px var(--blood2); }
+  .cal .num { color: var(--faint); font-weight: 700; }
+  .cal .today .num { color: var(--blood2); }
+  .cal .it { margin-top: 3px; line-height: 1.3; }
+  .cal .it.w a { color: var(--ok); }
+  .cal .it.w a::before { content: "✓ "; }
+  .tag { font-size: 10px; letter-spacing: .5px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; color: var(--warn); }
+  .form { display: grid; grid-template-columns: 160px 1fr; gap: 10px 14px; align-items: center; }
+  .form .input, .form select { width: 100%; }
+  .pick { position: relative; }
+  .pick .suggest { top: 38px; }
+  .bad { color: var(--bad); }
+</style>
+<script>
+/* Watch Planner: agenda, calendar, season/event plans and the Challenge Builder. */
+(function () {
+  var TABS = [['agenda', '🎬 Agenda'], ['calendar', '📅 Calendar'], ['events', '🗂️ Events'], ['challenges', '🎃 Challenge Builder']];
+  var st = { tab: 'agenda', show: 'upcoming', occasion: '', form: null, pickQ: '', challenge: null };
+
+  function today() { return HQ.isoToday(); }
+
+  // ---------------------------------------------------------------- shared form
+  function filmPicker(a, M, data) {
+    var chosen = data.film_id ? M.byId[data.film_id] : null;
+    var hits = st.pickQ.trim() ? HQ.search(M, st.pickQ).slice(0, 8) : [];
+    return '<div class="pick"><input class="input" id="ppick" placeholder="Search your films" autocomplete="off" value="' +
+      a.esc(chosen && !st.pickQ ? chosen.key : st.pickQ) + '">' +
+      (hits.length ? '<div class="suggest">' + hits.map(function (f) {
+        return '<div data-ppick="' + a.esc(f.id) + '"><span class="t">' + a.esc(f.key) + '</span>' + a.statusChip(f.status) + '</div>';
+      }).join('') + '</div>' : '') + '</div>';
+  }
+
+  function renderForm(a, M) {
+    var f = st.form, d = f.data, body = '', title = '';
+    if (f.kind === 'agenda') {
+      var occs = {};
+      M.raw.agenda.forEach(function (x) { if (x.occasion) occs[x.occasion] = 1; });
+      title = d.schedule_id ? 'Edit scheduled film' : 'Schedule a film';
+      body = '<label>Date</label><input class="input" type="date" id="pf_date" value="' + a.esc(d.planned_date || '') + '">' +
+        '<label>Film</label>' + filmPicker(a, M, d) +
+        '<label>List / occasion</label><input class="input" id="pf_occ" list="pf_occs" value="' + a.esc(d.occasion || '') + '">' +
+        '<datalist id="pf_occs">' + Object.keys(occs).sort().map(function (o) { return '<option value="' + a.esc(o) + '">'; }).join('') + '</datalist>' +
+        '<label>Context / note</label><input class="input" id="pf_note" value="' + a.esc(d.context_note || '') + '" placeholder="e.g. Daily countdown, Bonus • ...">';
+    } else if (f.kind === 'event') {
+      title = d.event_plan_id ? 'Edit event' : 'New season / event';
+      body = '<label>Name</label><input class="input" id="pf_name" value="' + a.esc(d.name || '') + '">' +
+        '<label>Start watching</label><input class="input" type="date" id="pf_start" value="' + a.esc(d.start_date || '') + '">' +
+        '<label>Anchor / end</label><input class="input" type="date" id="pf_end" value="' + a.esc(d.end_date || '') + '">' +
+        '<label>Films</label><input class="input" id="pf_films" value="' + a.esc(d.intended_films || '') + '" placeholder="e.g. 31, or 0 fixed">' +
+        '<label>Planning note</label><input class="input" id="pf_pnote" value="' + a.esc(d.planning_note || '') + '">';
+    } else if (f.kind === 'assign') {
+      var crit = M.raw.criteria.filter(function (c) { return c.criterion_id === d.criterion_id; })[0];
+      title = 'Assign a film to: ' + crit.label;
+      body = '<label>Film</label>' + filmPicker(a, M, d) +
+        '<label>Notes / fit</label><input class="input" id="pf_fit" value="' + a.esc(d.fit_notes || '') + '" placeholder="Why it counts">';
+    } else if (f.kind === 'criterion') {
+      title = d.criterion_id ? 'Edit criterion' : 'Add a criterion';
+      body = '<label>Criterion</label><input class="input" id="pf_label" value="' + a.esc(d.label || '') + '" placeholder="e.g. A film from the 1970s">' +
+        '<label>Required</label><input class="input" type="number" min="1" id="pf_req" value="' + a.esc(d.required_count || 1) + '" style="width:90px">';
+    }
+    return '<div class="panel" style="margin-bottom:16px;border-color:var(--blood2)"><h2>' + a.esc(title) + '</h2><div class="form">' + body + '</div>' +
+      '<div style="margin-top:14px;display:flex;gap:8px"><button class="btn primary" data-psave>Save</button><button class="btn ghost" data-pcancel>Cancel</button>' +
+      (f.kind === 'agenda' && d.schedule_id ? '<span class="grow"></span><button class="btn ghost" data-pdel="agenda">Unschedule</button>' : '') +
+      (f.kind === 'event' && d.event_plan_id ? '<span class="grow"></span><button class="btn ghost" data-pdel="event">Delete event</button>' : '') +
+      '</div></div>';
+  }
+
+  function readForm(a) {
+    var f = st.form, d = f.data, v = function (id) { var el = a.$('#' + id); return el ? el.value : ''; };
+    if (f.kind === 'agenda') { d.planned_date = v('pf_date'); d.occasion = v('pf_occ'); d.context_note = v('pf_note'); }
+    if (f.kind === 'event') { d.name = v('pf_name'); d.start_date = v('pf_start'); d.end_date = v('pf_end'); d.intended_films = v('pf_films'); d.planning_note = v('pf_pnote'); }
+    if (f.kind === 'assign') d.fit_notes = v('pf_fit');
+    if (f.kind === 'criterion') { d.label = v('pf_label'); d.required_count = v('pf_req'); }
+  }
+
+  function openForm(kind, data) { st.form = { kind: kind, data: data || {} }; st.pickQ = ''; }
+
+  function upsert(list, keyName, rec) {
+    for (var i = 0; i < list.length; i++) if (list[i][keyName] === rec[keyName]) { list[i] = rec; return; }
+    list.push(rec);
+  }
+
+  function saveForm(a, M) {
+    readForm(a);
+    var f = st.form, d = f.data;
+    var done = function (msg) { st.form = null; a.render(); a.toast(msg, 'ok'); };
+    var fail = function (e) { a.toast(e.message, 'bad'); };
+    if (f.kind === 'agenda') {
+      return a.call('apiSaveAgenda', d).then(function (rec) { upsert(M.raw.agenda, 'schedule_id', rec); done('Scheduled ' + M.byId[rec.film_id].title + ' for ' + a.fmtDate(rec.planned_date)); }).catch(fail);
+    }
+    if (f.kind === 'event') {
+      return a.call('apiSaveEventPlan', d).then(function (rec) { upsert(M.raw.plans, 'event_plan_id', rec); done('Saved ' + rec.name); }).catch(fail);
+    }
+    if (f.kind === 'assign') {
+      if (!d.film_id) return a.toast('Pick a film first.', 'bad');
+      return a.call('apiAddAssignment', d.criterion_id, d.film_id, d.fit_notes).then(function (rec) { M.raw.assignments.push(rec); done('Assigned ' + M.byId[rec.film_id].title); }).catch(fail);
+    }
+    if (f.kind === 'criterion') {
+      d.challenge_id = st.challenge;
+      return a.call('apiSaveCriterion', d).then(function (rec) { upsert(M.raw.criteria, 'criterion_id', rec); done('Criterion saved'); }).catch(fail);
+    }
+  }
+
+  // ---------------------------------------------------------------- agenda
+  function renderAgenda(a, M) {
+    var t = today();
+    var prog = PlanLogic.occasionProgress(M);
+    var rows = M.raw.agenda.filter(function (x) {
+      var f = M.byId[x.film_id];
+      if (st.occasion && x.occasion !== st.occasion) return false;
+      if (st.show === 'upcoming') return x.planned_date >= t;
+      if (st.show === 'slipped') return x.planned_date < t && (!f || f.status === 'Not watched');
+      return true;
+    }).sort(function (x, y) { return String(x.planned_date).localeCompare(String(y.planned_date)) || x.sort_order - y.sort_order; });
+    var slipped = M.raw.agenda.filter(function (x) { var f = M.byId[x.film_id]; return x.planned_date < t && f && f.status === 'Not watched'; }).length;
+    var month = '';
+    var body = rows.map(function (x) {
+      var f = M.byId[x.film_id];
+      var mm = x.planned_date ? new Date(x.planned_date + 'T12:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : 'No date';
+      var head = mm !== month ? '<tr><td colspan="5" style="padding-top:18px"><b>' + a.esc(mm) + '</b></td></tr>' : '';
+      month = mm;
+      return head + '<tr' + (x.planned_date === t ? ' style="background:var(--bloodbg)"' : '') + '><td class="small" style="white-space:nowrap">' + a.esc(a.fmtDate(x.planned_date) || x.raw_date) +
+        (x.planned_date === t ? ' 👻' : '') + '</td>' +
+        '<td>' + (f ? a.filmLink(f) : '<span class="bad">' + a.esc(x.raw_film) + '</span>') + (PlanLogic.isBonus(x) ? ' <span class="tag">BONUS</span>' : '') + '</td>' +
+        '<td class="small">' + PlanLogic.occasionIcon(x.occasion) + ' ' + a.esc(x.occasion) + '<div class="faint">' + a.esc(x.context_note) + '</div></td>' +
+        '<td>' + (f ? a.statusChip(f.status) : '') + '</td>' +
+        '<td><button class="btn ghost small" data-pedit="' + a.esc(x.schedule_id) + '">Edit</button></td></tr>';
+    }).join('');
+    return '<div class="grid g4" style="margin-bottom:16px">' + prog.map(function (o) {
+        return '<div class="panel click-occ" data-pocc="' + a.esc(o.occasion) + '" style="cursor:pointer' + (st.occasion === o.occasion ? ';border-color:var(--blood2)' : '') + '">' +
+          '<div class="small"><b>' + PlanLogic.occasionIcon(o.occasion) + ' ' + a.esc(o.occasion) + '</b></div>' +
+          '<div class="small muted" style="margin:4px 0 8px">' + a.esc(a.fmtDate(o.first)) + ' → ' + a.esc(a.fmtDate(o.last)) + '</div>' +
+          '<div class="bar"><i style="width:' + (o.total ? o.watched / o.total * 100 : 0) + '%"></i></div>' +
+          '<div class="small muted" style="margin-top:6px">' + o.watched + '/' + o.total + ' watched</div></div>';
+      }).join('') + '</div>' +
+      '<div class="panel"><div class="toolbar"><div class="seg">' + [['upcoming', 'Upcoming'], ['slipped', 'Slipped (' + slipped + ')'], ['all', 'Everything']].map(function (o) {
+        return '<button data-pshow="' + o[0] + '" class="' + (st.show === o[0] ? 'on' : '') + '">' + o[1] + '</button>';
+      }).join('') + '</div>' + (st.occasion ? '<button class="btn ghost" data-pocc="">✕ ' + a.esc(st.occasion) + '</button>' : '') +
+      '<span class="grow"></span><button class="btn primary" data-pnew="agenda">+ Schedule a film</button></div>' +
+      (body ? '<table><tbody>' + body + '</tbody></table>' : '<div class="empty">' + (st.show === 'slipped' ? 'Nothing has slipped. Disturbingly disciplined.' : 'Nothing scheduled here.') + '</div>') + '</div>';
+  }
+
+  // ---------------------------------------------------------------- calendar
+  function renderCalendar(a, M) {
+    var t = today(), all = PlanLogic.calendarMonths(M, t);
+    var nowKey = t.slice(0, 7);
+    var months = st.calPast ? all : all.filter(function (mo) { return mo.year + '-' + ('0' + (mo.month + 1)).slice(-2) >= nowKey; });
+    var hidden = all.length - months.length;
+    var legend = ['🎃 Halloween', '🔥 Bonfire', '1️⃣3️⃣ Unlucky', '🦃 Thanksgiving', '🛍️ Black Friday', '❄️ Winter', '✨ New Year', '🍂 Hooptober'];
+    return '<div class="chips" style="margin-bottom:14px">' + legend.map(function (l) { return '<span class="chip">' + l + '</span>'; }).join('') +
+      '<span class="chip">👻 You are here</span><span class="grow"></span>' +
+      (hidden || st.calPast ? '<button class="btn ghost small" data-pcalpast>' + (st.calPast ? 'Hide past months' : 'Show ' + hidden + ' earlier month' + (hidden === 1 ? '' : 's')) + '</button>' : '') + '</div>' +
+      months.map(function (mo) {
+        var name = new Date(Date.UTC(mo.year, mo.month, 15)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        return '<div class="panel" style="margin-bottom:16px"><h2>' + a.esc(name) + '</h2><div class="cal">' +
+          ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (d) { return '<div class="dow">' + d + '</div>'; }).join('') +
+          mo.cells.map(function (c) {
+            if (!c) return '<div class="day blank"></div>';
+            return '<div class="day' + (c.today ? ' today' : '') + '" data-pday="' + c.iso + '"><span class="num">' + c.day + '</span>' + (c.today ? ' <span class="small">👻 you are here</span>' : '') +
+              c.items.map(function (x) {
+                var f = M.byId[x.film_id];
+                return '<div class="it' + (f && f.status === 'Watched' ? ' w' : '') + '">' + PlanLogic.occasionIcon(x.occasion) + ' ' +
+                  (f ? a.filmLink(f, f.key) : a.esc(x.raw_film)) + (PlanLogic.isBonus(x) ? ' <span class="tag">BONUS</span>' : '') + '</div>';
+              }).join('') + '</div>';
+          }).join('') + '</div></div>';
+      }).join('');
+  }
+
+  // ---------------------------------------------------------------- events
+  function renderEvents(a, M) {
+    var t = today();
+    var plans = M.raw.plans.slice().sort(function (x, y) { return String(x.start_date).localeCompare(String(y.start_date)) || x.sort_order - y.sort_order; });
+    return '<div class="panel"><div class="toolbar"><span class="muted">Your season plan: when each run starts, where it lands and how many films it wants.</span>' +
+      '<span class="grow"></span><button class="btn primary" data-pnew="event">+ New event</button></div>' +
+      (plans.length ? '<table><thead><tr><th>Season / event</th><th>Start watching</th><th>Anchor / end</th><th>Films</th><th>Scheduled</th><th>Where it stands</th><th>Planning note</th><th></th></tr></thead><tbody>' +
+        plans.map(function (p) {
+          var s = PlanLogic.eventStatus(p, t);
+          var sched = M.raw.agenda.filter(function (x) { return x.planned_date >= p.start_date && x.planned_date <= p.end_date; }).length;
+          return '<tr><td><b>' + PlanLogic.occasionIcon(p.name) + ' ' + a.esc(p.name) + '</b></td><td class="small">' + a.esc(a.fmtDate(p.start_date)) + '</td>' +
+            '<td class="small">' + a.esc(a.fmtDate(p.end_date)) + '</td><td>' + a.esc(p.intended_films) + '</td><td>' + sched + '</td>' +
+            '<td><span class="status ' + (s.state === 'running' ? 'Unsure' : s.state === 'done' ? 'Watched' : 'Not') + '">' + a.esc(s.label) + '</span></td>' +
+            '<td class="small muted">' + a.esc(p.planning_note) + '</td><td><button class="btn ghost small" data-peditevent="' + a.esc(p.event_plan_id) + '">Edit</button></td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">No events planned.</div>') + '</div>';
+  }
+
+  // ---------------------------------------------------------------- challenges
+  function renderChallenges(a, M) {
+    var chs = M.raw.challenges;
+    if (!st.challenge || !chs.some(function (c) { return c.challenge_id === st.challenge; })) st.challenge = chs.length ? chs[chs.length - 1].challenge_id : null;
+    var head = '<div class="toolbar">' + (chs.length ? '<div class="seg">' + chs.map(function (c) {
+      return '<button data-pch="' + a.esc(c.challenge_id) + '" class="' + (st.challenge === c.challenge_id ? 'on' : '') + '">' + a.esc(c.title) + '</button>';
+    }).join('') + '</div>' : '') + '<span class="grow"></span>' +
+      (st.challenge ? '<button class="btn ghost" data-prenamech>Rename</button>' : '') + '<button class="btn" data-pnewch>+ New challenge</button></div>';
+    if (!st.challenge) return head + '<div class="panel empty">No challenges yet. Hooptober is coming whether you like it or not.</div>';
+    var b = PlanLogic.challengeBoard(M, st.challenge);
+    var stats = [['Criteria', b.criteria], ['Covered', b.coveredCriteria + '/' + b.criteria], ['Completion', a.pct(b.completion)], ['Assignments', b.assignments]];
+    return head + '<div class="stats" style="grid-template-columns:repeat(4,1fr)">' + stats.map(function (s) {
+        return '<div class="stat"><span>' + s[0] + '</span><b>' + a.esc(s[1]) + '</b></div>';
+      }).join('') + '</div>' +
+      '<div class="panel"><div class="toolbar"><span class="muted small">One film can cover several criteria. The same film twice on one criterion never counts twice.</span>' +
+      '<span class="grow"></span><button class="btn primary" data-pnew="criterion">+ Criterion</button></div>' +
+      (b.rows.length ? '<table><thead><tr><th>Criterion</th><th>Required</th><th>Covered</th><th>Status</th><th>Films</th><th></th></tr></thead><tbody>' +
+        b.rows.map(function (r) {
+          return '<tr><td><a class="film-link" data-peditcrit="' + a.esc(r.crit.criterion_id) + '">' + a.esc(r.crit.label) + '</a></td><td>' + r.required + '</td><td>' + r.covered + '</td>' +
+            '<td>' + (r.done ? '<span class="status Watched">✅ Covered</span>' : '<span class="status DNF">❌ Missing ' + r.missing + '</span>') + '</td>' +
+            '<td><div class="chips">' + r.assignments.map(function (x) {
+              var f = M.byId[x.film_id];
+              return '<span class="chip" title="' + a.esc(x.fit_notes || '') + '">' + (f ? a.filmLink(f) + ' <span class="faint">' + a.esc(f.status) + '</span>' : 'Not tracked') +
+                (r.dup[x.film_id] ? ' ⚠️ Duplicate' : '') + ' <a class="film-link" data-punassign="' + a.esc(x.assignment_id) + '">✕</a></span>';
+            }).join('') + '<button class="btn ghost small" data-passign="' + a.esc(r.crit.criterion_id) + '">+ film</button></div></td>' +
+            '<td><button class="btn ghost small" data-pdelcrit="' + a.esc(r.crit.criterion_id) + '">Delete</button></td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">Add criteria, then assign films to them.</div>') + '</div>';
+  }
+
+  function render(a) {
+    var M = a.model();
+    var body = st.tab === 'calendar' ? renderCalendar(a, M) : st.tab === 'events' ? renderEvents(a, M) : st.tab === 'challenges' ? renderChallenges(a, M) : renderAgenda(a, M);
+    return a.topBar('Watch Planner', 'Every date, every countdown, every challenge. Your future victims, in order. 📅') +
+      '<div class="toolbar"><div class="seg">' + TABS.map(function (t) {
+        return '<button data-ptab="' + t[0] + '" class="' + (st.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
+      }).join('') + '</div></div>' + (st.form ? renderForm(a, M) : '') + body;
+  }
+
+  function onClick(ev, a) {
+    var t = ev.target.closest('[data-ptab],[data-pshow],[data-pocc],[data-pnew],[data-pedit],[data-peditevent],[data-pday],[data-ppick],[data-psave],[data-pcancel],[data-pdel],' +
+      '[data-pcalpast],[data-pch],[data-pnewch],[data-prenamech],[data-passign],[data-punassign],[data-pdelcrit],[data-peditcrit]');
+    if (!t) return false;
+    if (ev.target.closest('[data-film]') && !t.hasAttribute('data-ppick')) return false;
+    var d = t.dataset, M = a.model();
+    if (d.ptab) { st.tab = d.ptab; st.form = null; a.render(); return true; }
+    if (d.pshow) { st.show = d.pshow; a.render(); return true; }
+    if (d.pocc !== undefined) { st.occasion = st.occasion === d.pocc ? '' : d.pocc; if (st.occasion) st.show = 'all'; a.render(); return true; }
+    if (d.pnew === 'agenda') { openForm('agenda', { planned_date: today(), occasion: st.occasion }); a.render(); return true; }
+    if (d.pnew === 'event') { openForm('event', {}); a.render(); return true; }
+    if (d.pnew === 'criterion') { openForm('criterion', { required_count: 1 }); a.render(); return true; }
+    if (d.pedit) { openForm('agenda', Object.assign({}, M.raw.agenda.filter(function (x) { return x.schedule_id === d.pedit; })[0])); window.scrollTo(0, 0); a.render(); return true; }
+    if (d.peditevent) { openForm('event', Object.assign({}, M.raw.plans.filter(function (x) { return x.event_plan_id === d.peditevent; })[0])); a.render(); return true; }
+    if (d.peditcrit) { openForm('criterion', Object.assign({}, M.raw.criteria.filter(function (x) { return x.criterion_id === d.peditcrit; })[0])); a.render(); return true; }
+    if (d.pday) { openForm('agenda', { planned_date: d.pday }); window.scrollTo(0, 0); a.render(); return true; }
+    if (d.ppick) { readForm(a); st.form.data.film_id = d.ppick; st.pickQ = ''; a.render(); return true; }
+    if (d.pcancel !== undefined) { st.form = null; a.render(); return true; }
+    if (d.psave !== undefined) { saveForm(a, M); return true; }
+    if (d.pdel === 'agenda') {
+      var sid = st.form.data.schedule_id;
+      if (!confirm('Take this film off the schedule? The film and its lists stay as they are.')) return true;
+      a.call('apiDeleteAgenda', sid).then(function () {
+        M.raw.agenda = M.raw.agenda.filter(function (x) { return x.schedule_id !== sid; }); st.form = null; a.render(); a.toast('Unscheduled', 'ok');
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.pdel === 'event') {
+      var eid = st.form.data.event_plan_id;
+      if (!confirm('Delete this event plan? Scheduled films are not touched.')) return true;
+      a.call('apiDeleteEventPlan', eid).then(function () {
+        M.raw.plans = M.raw.plans.filter(function (x) { return x.event_plan_id !== eid; }); st.form = null; a.render(); a.toast('Event deleted', 'ok');
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.pcalpast !== undefined) { st.calPast = !st.calPast; a.render(); return true; }
+    if (d.pch) { st.challenge = d.pch; st.form = null; a.render(); return true; }
+    if (d.pnewch !== undefined || d.prenamech !== undefined) {
+      var cur = d.prenamech !== undefined ? M.raw.challenges.filter(function (c) { return c.challenge_id === st.challenge; })[0] : null;
+      var title = prompt('Challenge name:', cur ? cur.title : 'Hooptober ' + new Date().getFullYear());
+      if (!title) return true;
+      a.call('apiSaveChallenge', cur ? { challenge_id: cur.challenge_id, title: title, period: cur.period } : { title: title }).then(function (rec) {
+        upsert(M.raw.challenges, 'challenge_id', rec); st.challenge = rec.challenge_id; a.render();
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.passign) { openForm('assign', { criterion_id: d.passign }); window.scrollTo(0, 0); a.render(); return true; }
+    if (d.punassign) {
+      a.call('apiRemoveAssignment', d.punassign).then(function () {
+        M.raw.assignments = M.raw.assignments.filter(function (x) { return x.assignment_id !== d.punassign; }); a.render();
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.pdelcrit) {
+      if (!confirm('Delete this criterion and its film assignments? The films themselves stay put.')) return true;
+      a.call('apiDeleteCriterion', d.pdelcrit).then(function () {
+        M.raw.criteria = M.raw.criteria.filter(function (x) { return x.criterion_id !== d.pdelcrit; });
+        M.raw.assignments = M.raw.assignments.filter(function (x) { return x.criterion_id !== d.pdelcrit; });
+        a.render();
+      }).catch(function (e) { a.toast(e.message, 'bad'); });
+      return true;
+    }
+    return false;
+  }
+
+  function onInput(ev, a) {
+    if (ev.target.id !== 'ppick') return false;
+    readForm(a);
+    st.pickQ = ev.target.value;
+    st.form.data.film_id = null;
+    var pos = ev.target.selectionStart;
+    a.render();
+    var again = a.$('#ppick'); again.focus(); again.setSelectionRange(pos, pos);
+    return true;
+  }
+
+  App.view('planner', { render: render, onClick: onClick, onInput: onInput });
+})();
+</script>
