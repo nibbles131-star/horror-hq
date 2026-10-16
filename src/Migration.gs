@@ -513,6 +513,15 @@ function runMigration() {
       'Was waiting in NEW FILMS TO ADD. The app adds films automatically now.');
   });
 
+  // Ratings Log context labels that point at a list the film is not actually on.
+  var listedIds = {};
+  entries.forEach(function (e) { listedIds[e.film_id] = true; });
+  src.ratingsLog.forEach(function (r, i) {
+    var key = String(r[0]).trim(), label = String(r[1]).trim();
+    if (key && label && films[key] && !listedIds[films[key].film_id]) exception('warning', 'stale-list-label', LEGACY_TABS.ratingsLog,
+      'B' + (i + 10), label, key + ' is labelled "' + label + '" in Ratings Log but sits on no list tab. Kept as an unlisted film.');
+  });
+
   // ---------------------------------------------------------------- write everything
   var filmRows = sortedKeys.map(function (k) { return films[k]; });
   var stateRows = sortedKeys.map(function (k) { return state[k]; });

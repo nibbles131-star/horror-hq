@@ -234,6 +234,8 @@ if (typeof module !== 'undefined') module.exports = ExcLogic;
     return (exact || colls[0] || {}).collection_id || '';
   }
 
+  var SYNCABLE = { '👀 Maybe': true, '🚫 Rejected': true, '👁️ Seen / unlisted': true };
+
   function renderDecide(a, M) {
     var open = openSearches();
     if (!open.length) return '<div class="panel empty">No open hunts. Build one, send it to Arnold and paste his answer back.</div>';
@@ -262,7 +264,9 @@ if (typeof module !== 'undefined') module.exports = ExcLogic;
         if (o.decision === '✅ Approved') extra = '<select data-xopt="coll" data-cid="' + a.esc(c[0]) + '">' + a.options(collOptions, o.coll, 'Film Library only') + '</select>' +
           '<input class="input" data-xopt="slot" data-cid="' + a.esc(c[0]) + '" placeholder="Slot (optional)" value="' + a.esc(o.slot) + '" style="width:120px">';
         if (o.decision === '👁️ Seen / unlisted') extra = '<select data-xopt="rating" data-cid="' + a.esc(c[0]) + '">' + a.options([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], o.rating, 'Rating (optional)') + '</select>';
-        var changed = o.decision !== cur || (d && o.reason !== (d[3] || ''));
+        // A decision the old sheet never processed (memory disagrees) can be committed again as-is.
+        var unsynced = d && f && SYNCABLE[cur] && (!f.memory || f.memory[0] !== cur);
+        var changed = o.decision !== cur || (d && o.reason !== (d[3] || '')) || unsynced;
         return '<div class="cand' + (d && cur !== '⏳ Pending' ? ' decided' : '') + '"><div class="row" style="border:0;padding:0">' +
           '<span class="t"><h3>' + (f ? a.filmLink(f) : a.esc(c[3])) + '</h3></span>' +
           '<span class="small' + (breaks ? ' warn' : ' muted') + '">Known before: ' + a.esc(c[7] || 'No') + (breaks ? ' ⚠️' : '') + '</span></div>' +

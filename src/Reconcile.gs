@@ -58,17 +58,25 @@ function reconcile_(L, src, m) {
   dbRead('DiscoveryDecisions').forEach(function (d) { decisionsByType[d.decision] = (decisionsByType[d.decision] || 0) + 1; });
 
   var checks = [];
-  function check(name, legacy, migrated, note) {
+  function check(name, legacy, migrated, note, explained) {
     var ok = String(legacy) === String(migrated);
-    checks.push({ name: name, legacy: legacy, migrated: migrated, pass: ok, note: note || '' });
+    checks.push({ name: name, legacy: legacy, migrated: migrated, pass: ok, note: note || '', explained: !!explained });
   }
   check('Known films (Film Library)', legacyNumber_(lib, 'A4'), knownMigrated);
   var extras = m.exceptions.filter(function (e) { return e.kind === 'film-not-in-library'; }).length;
   check('Films created in total (known + flagged extras)', knownMigrated + extras, m.films.length,
     'Extra films were referenced somewhere but unknown to the library; see exceptions.');
   check('Tracked films (Ratings Log rows)', legacyNumber_(rl, 'F3'), Object.keys(rlIds).length);
-  check('Films with at least one list entry', legacyNumber_(lib, 'C4'), count(m.films, function (f) { return inList[f.film_id]; }),
-    'Old ON LISTS also counts Ratings Archive-only films.');
+  // Old ON LISTS counts Ratings Log rows with a list label; a stale label (film on no list tab) is explained, not lost.
+  var stale = src.ratingsLog.filter(function (r) {
+    var id = keyToId[String(r[0]).trim()];
+    return id && String(r[1]).trim() && !inList[id];
+  }).map(function (r) { return String(r[0]).trim() + ' (' + String(r[1]).trim() + ')'; });
+  var onLists = count(m.films, function (f) { return inList[f.film_id]; });
+  var oldOnLists = legacyNumber_(lib, 'C4');
+  check('Films with at least one list entry', oldOnLists, onLists,
+    stale.length ? 'Old count includes ' + stale.length + ' Ratings Log label(s) for films on no list tab: ' + stale.join(', ') : '',
+    stale.length && Number(oldOnLists) === onLists + stale.length);
   check('All films seen', legacyNumber_(lib, 'D4'), watchedAll);
   check('Listed films watched', legacyNumber_(rl, 'B2'), watchedRl);
   check('Listed films rated', legacyNumber_(rl, 'D2'), ratedRl);
@@ -100,6 +108,7 @@ function reconcile_(L, src, m) {
   // Bestiary listed counts per category vs the Achievements cabinet.
   var bestRows = ach.getRange(22, 1, 15, 3).getDisplayValues();
   bestRows.forEach(function (r) {
+    if (!String(r[0]).trim()) return;
     var c = m.collections.filter(function (x) { return x.family === 'Bestiary' && x.name === r[0]; })[0];
     var listed = c ? count(m.entries, function (e) { return e.collection_id === c.collection_id; }) : 'missing';
     check('Bestiary listed: ' + r[0], Number(r[2]), listed);
@@ -109,8 +118,8 @@ function reconcile_(L, src, m) {
   m.exceptions.forEach(function (e) { exCounts[e.severity] = (exCounts[e.severity] || 0) + 1; });
   return {
     generated_at: nowIso_(),
-    passed: checks.filter(function (c) { return c.pass; }).length,
-    failed: checks.filter(function (c) { return !c.pass; }).length,
+    passed: checks.filter(function (c) { return c.pass || c.explained; }).length,
+    failed: checks.filter(function (c) { return !c.pass && !c.explained; }).length,
     checks: checks,
     exceptions: exCounts,
     tables: {
@@ -132,7 +141,7 @@ function writeReportTab_(report) {
     ['', '', '', ''],
     ['Check', 'Old sheet', 'Migrated', 'Result']];
   report.checks.forEach(function (c) {
-    rows.push([c.name, String(c.legacy), String(c.migrated), (c.pass ? '✅ match' : '❌ differs') + (c.note && !c.pass ? ' • ' + c.note : '')]);
+    rows.push([c.name, String(c.legacy), String(c.migrated), (c.pass ? '✅ match' : c.explained ? '✅ explained' : '❌ differs') + (c.note && !c.pass ? ' • ' + c.note : '')]);
   });
   sh.getRange(1, 1, rows.length, 4).setNumberFormat('@').setValues(rows);
   sh.getRange(1, 1, 1, 4).setFontWeight('bold').setFontSize(13);
