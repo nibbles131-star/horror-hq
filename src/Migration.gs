@@ -211,7 +211,7 @@ function runMigration() {
   var nextColl = makeIdGen_('C', 3);
   var nextEntry = makeIdGen_('E', 5);
   function collection(family, name, tab) {
-    var k = family + '\u0001' + name;
+    var k = family + '|~|' + name;
     if (!collByKey[k]) {
       var c = { collection_id: nextColl(), family: family, name: name, icon: FAMILY_ICONS[family] || '',
         description: '', sort_order: collections.length + 1, active: true, source_tab: tab, created_at: now };
@@ -239,7 +239,7 @@ function runMigration() {
       return;
     }
     seqByColl[coll.collection_id] = (seqByColl[coll.collection_id] || 0) + 1;
-    var mk = coll.collection_id + '\u0001' + key;
+    var mk = coll.collection_id + '|~|' + key;
     if (seenMembership[mk]) exception('warning', 'repeated-membership', tab, 'row ' + row, key,
       'Same film appears twice in ' + coll.name + '; both entries kept.');
     seenMembership[mk] = true;
@@ -386,7 +386,7 @@ function runMigration() {
       surfaced_year: p.year, why_it_fits: r[6], sources: r[7], evidence_note: r[8], known_before: r[9],
       original_order: orderInSearch[sid], archive_notes: r[14], source_row: i + 7, created_at: now };
     candidates.push(cand);
-    candByKey[sid + '\u0001' + cand.surfaced_title] = cand;
+    candByKey[sid + '|~|' + cand.surfaced_title] = cand;
     if (String(r[10]).trim()) {
       decisions.push({ decision_id: nextDec(), candidate_id: cand.candidate_id, decision: String(r[10]).trim(), reason: r[11],
         decision_date: parseDate_(r[12]), destination_result: r[13], actor: 'Tommy (migrated)', created_at: now });
@@ -397,7 +397,7 @@ function runMigration() {
     var film = String(r[1]).trim();
     if (!film) return;
     var sid = String(r[15]).trim();
-    var cand = candByKey[sid + '\u0001' + film];
+    var cand = candByKey[sid + '|~|' + film];
     var ref = 'row ' + (i + 13);
     if (!cand) { exception('error', 'inbox-not-in-archive', LEGACY_TABS.excavator, ref, film, 'Inbox candidate missing from Discovery Archive.'); return; }
     var sync = String(r[14]).trim();
