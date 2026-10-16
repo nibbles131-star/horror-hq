@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
-"""Packs src/ into the JSON bundle the in-sheet updater installs.
+"""Builds a release for the in-sheet updater.
 
-Usage: python3 tools/build_bundle.py  ->  dist/horror-hq-update-bundle.json
+Usage: python3 tools/build_bundle.py  ->  dist/release/<source files> + dist/release/release.json
+
+Upload the changed source files to the Drive folder "Horror HQ Code", then release.json last.
 """
 import json
 import pathlib
+import shutil
 import subprocess
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
-OUT = ROOT / "dist" / "horror-hq-update-bundle.json"
-TYPES = {".gs": "SERVER_JS", ".html": "HTML", ".json": "JSON"}
+OUT = ROOT / "dist" / "release"
+EXTS = {".gs", ".html", ".json"}
 
 
 def main():
-    files = []
-    for path in sorted(SRC.iterdir()):
-        kind = TYPES.get(path.suffix)
-        if not kind:
-            continue
-        files.append({"name": path.stem, "type": kind, "source": path.read_text(encoding="utf-8")})
-    if not any(f["name"] == "appsscript" and f["type"] == "JSON" for f in files):
-        raise SystemExit("src/appsscript.json is missing")
+    names = sorted(p.name for p in SRC.iterdir() if p.suffix in EXTS)
+    for required in ("appsscript.json", "Updater.gs"):
+        if required not in names:
+            raise SystemExit(f"src/{required} is missing")
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True,
                              text=True, check=True).stdout.strip()
     except subprocess.CalledProcessError:
         sha = "nogit"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    bundle = {"version": f"{stamp}-{sha}", "built_at": datetime.now(timezone.utc).isoformat(), "files": files}
-    OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
-    print(f"{OUT} {bundle['version']} ({len(files)} files, {OUT.stat().st_size} bytes)")
+    if OUT.exists():
+        shutil.rmtree(OUT)
+    OUT.mkdir(parents=True)
+    for n in names:
+        shutil.copy(SRC / n, OUT / n)
+    release = {"version": f"{stamp}-{sha}", "files": names}
+    (OUT / "release.json").write_text(json.dumps(release, indent=2), encoding="utf-8")
+    print(json.dumps(release, indent=2))
 
 
 if __name__ == "__main__":

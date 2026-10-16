@@ -14,7 +14,7 @@ A private Google Apps Script web app that replaces the 31-tab "Horror Movie Mast
 | `src/Db.gs` | Data-access layer (read, append, update, replace) |
 | `src/Migration.gs` | One-shot, re-runnable import from the old workbook |
 | `src/Reconcile.gs` | Compares old dashboard numbers with migrated data, writes the Migration Report tab |
-| `src/Updater.gs` | Self-updater: installs `horror-hq-update-bundle.json` from Drive via the Apps Script API |
+| `src/Updater.gs` | Self-updater: installs the release in the Drive folder "Horror HQ Code" via the Apps Script API |
 | `src/Code.gs`, `src/*.html` | Web app and the sheet menu |
 | `tools/` | Bundle builder and the Node test harness with mocked Sheets |
 
@@ -22,12 +22,13 @@ A private Google Apps Script web app that replaces the 31-tab "Horror Movie Mast
 
 ```sh
 node tools/run_migration_test.js   # migration against a fixture copy of the old workbook
-python3 tools/build_bundle.py      # writes dist/horror-hq-update-bundle.json
+python3 tools/build_bundle.py      # writes dist/release/ (source files + release.json)
 ```
 
-Upload the bundle to Drive as `horror-hq-update-bundle.json` (same file each time). The installed
-app checks every 15 minutes and installs newer bundles itself; **🎃 Horror HQ ▸ Install latest update**
-in the database workbook forces it.
+Publishing a release: upload the changed files from `dist/release/` to the Drive folder
+**Horror HQ Code** (overwrite in place, plain files, no conversion), then upload `release.json` **last**.
+The installed app checks every 15 minutes and installs a new release itself;
+**🎃 Horror HQ ▸ Install latest update** in the database workbook forces it.
 
 ## First-time install
 
