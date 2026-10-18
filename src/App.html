@@ -404,6 +404,7 @@ var App = (function () {
   // ------------------------------------------------------------------ trophy unlock reveal
   /** Compares earned trophies with the ones already celebrated and throws a party for the new ones. */
   function checkTrophies() {
+    if (M && typeof FilmstripParty !== 'undefined') FilmstripParty.check();
     if (!M || !M.raw.trophies || !M.raw.trophies.length) return;
     M.raw.fun = M.raw.fun || {};
     var earned = HQ.earnedTrophies(M);

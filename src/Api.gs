@@ -70,14 +70,15 @@ function apiBootstrap() {
     assignments: dbRead('ChallengeAssignments').map(stripRow_),
     openExceptions: openExceptions,
     posters: getSetting('poster_provider', null),
-    fun: { hall_of_fame: getSetting('hall_of_fame', []), bingo_card: getSetting('bingo_card', null), trophies_seen: getSetting('trophies_seen', null) },
+    fun: { hall_of_fame: getSetting('hall_of_fame', []), bingo_card: getSetting('bingo_card', null), trophies_seen: getSetting('trophies_seen', null),
+      franchise_branches: getSetting('franchise_branches', {}), franchises_done: getSetting('franchises_done', null) },
     version: PropertiesService.getScriptProperties().getProperty('INSTALLED_VERSION') || 'dev',
     loadMs: Date.now() - t0
   };
 }
 
-/** Small per-app preferences for the fun pages (Hall of Fame picks, the Bingo card, trophies already celebrated). */
-var UI_SETTINGS_ = ['hall_of_fame', 'bingo_card', 'trophies_seen'];
+/** Small per-app preferences for the fun pages (Hall of Fame picks, the Bingo card, trophies and franchises already celebrated, filmstrip branches). */
+var UI_SETTINGS_ = ['hall_of_fame', 'bingo_card', 'trophies_seen', 'franchise_branches', 'franchises_done'];
 function apiSaveUiSetting(key, value) {
   if (UI_SETTINGS_.indexOf(key) < 0) throw new Error('Unknown setting ' + key);
   if (JSON.stringify(value).length > 45000) throw new Error('That is too big to save.');

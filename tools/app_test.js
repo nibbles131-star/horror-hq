@@ -155,6 +155,41 @@ assert.strictEqual(CL.bestiaryTier(M2, 5), 'Silver');
 assert.strictEqual(CL.bestiaryTier(M2, 12), 'Gold');
 const fam = CL.familyProgress(M2, 'Classics');
 assert.strictEqual(fam.lists, 5, 'all five studios exist even when empty');
+// Franchise Filmstrip: frames in list order, lit for Watched/DNF, first Not watched is next up.
+const fsM = HQ.build(run('apiBootstrap()'));
+const evil = fsM.collList.find(c => c.family === 'Franchise' && c.name === 'Evil Dead');
+const extras = fsM.films.filter(f => !(fsM.entriesByColl[evil.collection_id] || []).some(e => e.film === f.id)).slice(0, 4);
+extras.forEach((f, i) => HQ.addEntry(fsM, { id: 'FS' + i, coll: evil.collection_id, film: f.id, slot: '', seq: 100 + i, sourceNote: '', contextNote: '' }));
+HQ.sortEntries(fsM);
+['DNF', 'Unsure', 'Not watched', 'Not watched'].forEach((s, i) => { extras[i].status = s; });
+const strip = CL.filmstrip(fsM, evil.collection_id);
+assert.deepStrictEqual(strip.map(x => x.film.id), fsM.entriesByColl[evil.collection_id].map(e => e.film), 'frames follow the list order');
+assert.deepStrictEqual(strip.map(x => [x.lit, x.dnf, x.unsure, x.next]).slice(-4),
+  [[true, true, false, false], [false, false, true, false], [false, false, false, true], [false, false, false, false]], 'DNF lit+marked, Unsure dark, one next up');
+assert.strictEqual(strip.filter(x => x.next)[0].film.id, CL.progress(fsM, evil.collection_id).next.id, 'next up matches the list card');
+const reels = CL.filmstrips(fsM, '', 'close');
+assert.strictEqual(reels.length, fsM.collList.filter(c => c.family === 'Franchise').length);
+assert.strictEqual(reels[0].coll.name, 'Evil Dead', 'unfinished franchises come before complete ones');
+assert.ok(CL.filmstrips(fsM, 'done', 'az').every(x => x.state === 'Complete'));
+assert.ok(CL.filmstrips(fsM, 'going', 'az').some(x => x.coll.name === 'Evil Dead'));
+assert.strictEqual(CL.filmstrips(fsM, 'fresh', 'az').length, 0);
+// Branches: entries named onto a track split off, each track gets its own next, the overall next stays put.
+const brStrip = CL.filmstrip(fsM, evil.collection_id, { FS3: 'Annabelle', FS1: 'Annabelle' });
+const brTracks = CL.tracks(brStrip);
+assert.deepStrictEqual(brTracks.map(t => [t.name, t.frames.length]), [['', strip.length - 2], ['Annabelle', 2]], 'main line first, then the branch');
+assert.strictEqual(brStrip.filter(x => x.next).length, 1, 'one overall next up');
+assert.ok(brStrip.find(x => x.entry.id === 'FS3').trackNext, 'the branch gets its own next');
+assert.ok(brStrip.find(x => x.entry.id === 'FS2').next && brStrip.find(x => x.entry.id === 'FS2').trackNext);
+fsM.raw.fun = { franchise_branches: { [evil.collection_id]: { FS3: 'Annabelle' } } };
+assert.strictEqual(CL.filmstrips(fsM, '', 'order').find(x => x.coll.name === 'Evil Dead').tracks.length, 2, 'saved branches reach the tab');
+// Completion parties: first run seeds silently, newly complete parties once, un-completing re-arms it.
+assert.deepStrictEqual(CL.celebrations(null, ['C1', 'C2']), { done: ['C1', 'C2'], fresh: [] });
+assert.deepStrictEqual(CL.celebrations(['C1'], ['C1', 'C2']), { done: ['C1', 'C2'], fresh: ['C2'] });
+assert.deepStrictEqual(CL.celebrations(['C1', 'C2'], ['C2']), { done: ['C2'], fresh: [] });
+assert.deepStrictEqual(run(`apiSaveUiSetting('franchise_branches', {C9: {E1: 'Annabelle'}})`), { C9: { E1: 'Annabelle' } });
+assert.deepStrictEqual(run('apiBootstrap()').fun.franchise_branches, { C9: { E1: 'Annabelle' } }, 'branches round-trip through bootstrap');
+assert.strictEqual(run('apiBootstrap()').fun.franchises_done, null, 'no parties recorded until the app seeds them');
+
 assert.throws(() => vm.runInContext(`apiCreateCollection('Bestiary', 'Robots')`, ctx), /locked/);
 assert.throws(() => vm.runInContext(`apiCreateCollection('Classics', 'Warner')`, ctx), /fixed/);
 const nc = run(`apiCreateCollection('Curated', 'Folk Horror Faves')`);

@@ -51,13 +51,135 @@ var CollLogic = (function () {
     return earned;
   }
 
-  return { franchiseState: franchiseState, progress: progress, familyProgress: familyProgress, bestiaryTier: bestiaryTier };
+  /**
+   * One franchise as filmstrip frames, in the list's own order (the order you set with the arrows).
+   * Watched and DNF light up (DNF gets marked), Unsure and Not watched stay dark. The first Not watched
+   * entry overall is next up (same as progress().next); each branch track also gets its own trackNext.
+   * branches = { entry_id: 'Branch name' }; entries without one sit on the main line ('').
+   */
+  function filmstrip(M, collId, branches) {
+    branches = branches || {};
+    var es = M.entriesByColl[collId] || [];
+    var nextDone = false, trackDone = {};
+    return es.map(function (e, i) {
+      var f = M.byId[e.film];
+      var br = String(branches[e.id] || '').trim();
+      var open = f.status === 'Not watched';
+      var next = !nextDone && open;
+      if (next) nextDone = true;
+      var trackNext = open && !trackDone[br];
+      if (trackNext) trackDone[br] = true;
+      return { n: i + 1, entry: e, film: f, branch: br, lit: f.status === 'Watched' || f.status === 'DNF', dnf: f.status === 'DNF',
+        unsure: f.status === 'Unsure', next: next, trackNext: trackNext };
+    });
+  }
+
+  /** Splits frames into tracks: the main line first, then each branch in the order it first appears. */
+  function tracks(frames) {
+    var out = [{ name: '', frames: [] }], at = { '': out[0] };
+    frames.forEach(function (fr) {
+      if (!at[fr.branch]) { at[fr.branch] = { name: fr.branch, frames: [] }; out.push(at[fr.branch]); }
+      at[fr.branch].frames.push(fr);
+    });
+    return out.filter(function (t) { return t.frames.length; });
+  }
+
+  /** Franchises for the Filmstrip tab: filtered by state and sorted. */
+  function filmstrips(M, show, sort) {
+    var allBranches = (M.raw.fun && M.raw.fun.franchise_branches) || {};
+    var out = M.collList.filter(function (c) { return c.family === 'Franchise'; }).map(function (c) {
+      var p = progress(M, c.collection_id);
+      var frames = filmstrip(M, c.collection_id, allBranches[c.collection_id]);
+      return { coll: c, p: p, state: franchiseState(p.watched, p.total, p.unsure), frames: frames, tracks: tracks(frames) };
+    }).filter(function (x) {
+      if (show === 'going') return x.state === 'In progress' || x.state === 'Nearly complete' || x.state === 'Needs review';
+      if (show === 'fresh') return x.state === 'Not started';
+      if (show === 'done') return x.state === 'Complete';
+      return true;
+    });
+    var byName = function (a, b) { return a.coll.name.localeCompare(b.coll.name); };
+    if (sort === 'az') out.sort(byName);
+    else if (sort === 'close') out.sort(function (a, b) {
+      var ad = a.p.total && a.p.pct < 1, bd = b.p.total && b.p.pct < 1;
+      return (bd - ad) || (b.p.pct - a.p.pct) || byName(a, b);
+    });
+    return out;
+  }
+
+  /**
+   * Which complete franchises still need a party. seen null = first run: everything already complete
+   * counts as celebrated. A franchise that stops being complete (new entry) drops out, so finishing it again parties again.
+   */
+  function celebrations(seen, completeIds) {
+    if (!seen) return { done: completeIds.slice(), fresh: [] };
+    var kept = seen.filter(function (id) { return completeIds.indexOf(id) >= 0; });
+    var fresh = completeIds.filter(function (id) { return kept.indexOf(id) < 0; });
+    return { done: kept.concat(fresh), fresh: fresh };
+  }
+
+  return { franchiseState: franchiseState, progress: progress, familyProgress: familyProgress, bestiaryTier: bestiaryTier,
+    filmstrip: filmstrip, tracks: tracks, filmstrips: filmstrips, celebrations: celebrations };
 })();
 if (typeof module !== 'undefined') module.exports = CollLogic;
 </script>
 <style>
   .click-card { cursor: pointer; transition: border-color .15s; }
   .click-card:hover { border-color: var(--blood2); }
+  .fsr { margin-bottom: 18px; padding-bottom: 10px; }
+  .fsr .fsh { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .fsr .fsh h3 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 26px; letter-spacing: 1px; color: var(--text); cursor: pointer; }
+  .fsr .fsh h3:hover { color: var(--blood2); text-shadow: 0 0 14px #e3242b77; }
+  .fsr .fsh .bar { width: 140px; }
+  .fstrip { position: relative; overflow-x: auto; border-radius: 6px; scroll-behavior: smooth; }
+  .reel { display: inline-flex; align-items: flex-start; min-width: 100%; box-sizing: border-box; padding: 24px 10px; background-color: #050203;
+    background-image: linear-gradient(90deg, #2c1416 0 11px, transparent 11px), linear-gradient(90deg, #2c1416 0 11px, transparent 11px);
+    background-size: 22px 8px, 22px 8px; background-repeat: repeat-x; background-position: 6px 8px, 6px calc(100% - 8px);
+    border-top: 1px solid #1d0b0c; border-bottom: 1px solid #1d0b0c; }
+  .fr { flex: none; width: var(--fw, 120px); margin: 0 5px; cursor: pointer; position: relative; }
+  .fr .pic { position: relative; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 3px; background: #120607; box-shadow: 0 0 0 2px #000;
+    filter: grayscale(1) brightness(.3); transition: filter .25s, transform .18s, box-shadow .25s; }
+  .fr .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .fr .noimg { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 8px;
+    font-family: var(--display); font-size: 16px; line-height: 1.1; color: var(--text); text-shadow: 0 0 10px #e3242b66;
+    background: repeating-linear-gradient(135deg, #1a0709 0 10px, #15060a 10px 20px); }
+  .fr .noimg small { font-family: var(--type); font-size: 10px; color: var(--muted); margin-top: 6px; text-shadow: none; }
+  .fr:hover .pic { filter: grayscale(.4) brightness(.75); transform: translateY(-3px); }
+  .fr.lit .pic { filter: none; box-shadow: 0 0 0 2px #000, 0 0 18px #ffb36622; }
+  .fr.lit:hover .pic { box-shadow: 0 0 0 2px var(--blood2), 0 0 22px #e3242b77; }
+  .fr.dnf .pic { filter: saturate(.55) contrast(1.05); }
+  .fr.next .pic { filter: grayscale(.15) brightness(.95); box-shadow: 0 0 0 3px var(--blood3), 0 0 26px #e3242bcc; animation: nextglow 1.8s ease-in-out infinite; }
+  @keyframes nextglow { 50% { box-shadow: 0 0 0 3px var(--blood2), 0 0 10px #e3242b55; } }
+  .fr .stamp { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%) rotate(-14deg); border: 2px solid var(--blood3); color: var(--blood3);
+    font-weight: 800; letter-spacing: 2px; font-size: 15px; padding: 1px 8px; background: #000a; border-radius: 3px; }
+  .fr .flag { position: absolute; top: 6px; left: 6px; font-size: 10px; font-weight: 800; letter-spacing: 1px; padding: 1px 6px; border-radius: 4px; background: #000c; }
+  .fr.next .flag { background: var(--blood2); color: #fff; }
+  .fr.unsure .flag { border: 1px solid #6a4a1c; color: var(--warn); }
+  .fr .rt { position: absolute; right: 6px; bottom: 6px; font-size: 11px; font-weight: 800; background: #000c; color: #fff; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--blood); }
+  .fr .fc { margin-top: 7px; font-size: 11.5px; line-height: 1.25; color: var(--faint); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .fr .fc b { color: var(--muted); font-family: var(--type); font-weight: 400; margin-right: 4px; }
+  .fr.lit .fc, .fr.next .fc { color: var(--text); }
+  .fr.next .fc b { color: var(--blood3); }
+  .fr.tnext .pic { filter: grayscale(.4) brightness(.7); box-shadow: 0 0 0 2px var(--blood), 0 0 12px #e3242b55; }
+  .fr.tnext .flag { border: 1px solid var(--blood2); color: var(--blood3); }
+  .fsbar { display: flex; height: 12px; border-radius: 99px; overflow: hidden; background: #1a0a0b; box-shadow: inset 0 0 0 1px var(--line2); margin: 2px 0 6px; }
+  .fsbar i { display: block; height: 100%; transition: width .4s; }
+  .fsbar i.w, .fslegend i.w { background: linear-gradient(90deg, var(--blood), var(--blood2)); box-shadow: 0 0 10px #e3242b88; }
+  .fsbar i.d, .fslegend i.d { background: var(--gore); }
+  .fsbar i.u, .fslegend i.u { background: repeating-linear-gradient(135deg, #a8741f 0 5px, #6a4a1c 5px 10px); }
+  .fslegend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .fslegend b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--blood2); letter-spacing: 1px; }
+  .fslegend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: #1a0a0b; box-shadow: inset 0 0 0 1px var(--line2); }
+  .fstrack { display: flex; gap: 10px; align-items: baseline; margin: 12px 0 6px; font-family: var(--type); font-size: 13px; color: var(--blood3); letter-spacing: .5px; }
+  .fsedit { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line2); }
+  .fsr.fsdone { border-color: var(--blood); box-shadow: 0 0 24px #e3242b33; }
+  .revealcard.fsparty { width: min(620px, 94vw); }
+  .fsparty .fan { display: flex; justify-content: center; margin: 22px 0 10px; padding: 0 18px; }
+  .fsparty .fanp { flex: 0 1 78px; min-width: 0; aspect-ratio: 2 / 3; margin: 0 -9px; border-radius: 5px; overflow: hidden; background: #120607;
+    box-shadow: 0 0 0 2px #000, 0 8px 20px #000c, 0 0 18px #e3242b66; transform-origin: 50% 120%; animation: fanin .5s cubic-bezier(.2, 1.4, .4, 1) both; }
+  .fsparty .fanp img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .fsparty .fanp .noimg { height: 100%; display: grid; place-items: center; padding: 4px; font-family: var(--display); font-size: 12px; line-height: 1.05; text-align: center;
+    background: repeating-linear-gradient(135deg, #1a0709 0 10px, #15060a 10px 20px); }
+  @keyframes fanin { from { opacity: 0; translate: 0 40px; } to { opacity: 1; translate: 0 0; } }
 </style>
 <script>
 /* Collections: every list family, its lists, and each list's films in order. */
@@ -74,7 +196,10 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
   ];
   var LOCKED = { Bestiary: true, Classics: true };
   var TIER_ICON = { Bronze: '🥉', Silver: '🥈', Gold: '🥇' };
-  var st = { family: 'Yearly', coll: null, show: '', q: '' };
+  var st = { family: 'Yearly', coll: null, show: '', q: '', fsShow: '', fsSort: 'order', fsSize: 120, fsScroll: {}, fsEdit: '' };
+  var FS_SHOW = [['', 'All'], ['going', 'On the go'], ['fresh', 'Not started'], ['done', 'Complete']];
+  var FS_SORT = [['order', 'Your order'], ['close', 'Closest to done'], ['az', 'A to Z']];
+  var FS_SIZES = [['S', 92], ['M', 120], ['L', 160]];
 
   function stateBadge(s) {
     var cls = s === 'Complete' ? 'Watched' : s === 'Needs review' ? 'Unsure' : s === 'Not started' ? 'Not' : '';
@@ -87,7 +212,8 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
       var p = CollLogic.familyProgress(M, f.id);
       return '<button data-cfam="' + f.id + '" class="' + (st.family === f.id ? 'on' : '') + '">' + f.icon + ' ' + f.id +
         ' <span class="small" style="opacity:.7">' + p.watched + '/' + p.total + '</span></button>';
-    }).join('') + '</div>';
+    }).join('') + '<button data-cfam="Filmstrip" class="' + (st.family === 'Filmstrip' ? 'on' : '') + '">🎞️ Filmstrip</button></div>';
+    if (st.family === 'Filmstrip') return renderFilmstrip(a, M, tabs);
     var colls = M.collList.filter(function (c) { return c.family === st.family; });
     var fp = CollLogic.familyProgress(M, st.family);
     var cards = colls.map(function (c) {
@@ -113,6 +239,181 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
         fp.watched + ' of ' + fp.total + ' films watched (' + a.pct(fp.total ? fp.watched / fp.total : 0) + ').</span><span class="grow"></span>' +
         (LOCKED[st.family] ? '' : '<button class="btn" data-cnew>+ New ' + a.esc(st.family) + ' list</button>') + '</div>' +
       (cards ? '<div class="grid g3">' + cards + '</div>' : '<div class="panel empty">No ' + a.esc(st.family) + ' lists yet.</div>');
+  }
+
+  function frameLabel(fr) {
+    var s = String(fr.entry.slot || '');
+    return !s ? '#' + fr.n : /^\d+$/.test(s) ? '#' + s : s;
+  }
+
+  function frameHtml(a, fr) {
+    var f = fr.film;
+    var cls = 'fr' + (fr.lit ? ' lit' : '') + (fr.dnf ? ' dnf' : '') + (fr.next ? ' next' : fr.trackNext ? ' tnext' : '') + (fr.unsure ? ' unsure' : '');
+    var r = f.rating !== null && f.rating !== undefined;
+    var tip = f.key + ' · ' + (fr.next ? 'Next up' : f.status) + (r ? ' · ' + f.rating + '/10' : '') + ' · click to open';
+    return '<div class="' + cls + '" data-film="' + a.esc(f.id) + '" title="' + a.esc(tip) + '"><div class="pic">' +
+      (f.poster ? '<img loading="lazy" src="' + a.esc(f.poster) + '" alt="' + a.esc(f.title) + '">'
+        : '<div class="noimg">' + a.esc(f.title) + '<small>' + a.esc(f.year || '') + '</small></div>') +
+      (fr.dnf ? '<span class="stamp">DNF</span>' : '') +
+      (fr.next ? '<span class="flag">NEXT UP</span>' : fr.trackNext ? '<span class="flag">NEXT HERE</span>' : fr.unsure ? '<span class="flag">UNSURE</span>' : '') +
+      (fr.lit && r ? '<span class="rt">' + f.rating + '</span>' : '') +
+      '</div><div class="fc"><b>' + a.esc(frameLabel(fr)) + '</b>' + a.esc(f.title) + (f.year ? ' (' + a.esc(f.year) + ')' : '') + '</div></div>';
+  }
+
+  /** Watched, DNF, unsure and still-to-watch as one stacked bar. */
+  function fsBar(a, p) {
+    var seg = function (n, cls, label) {
+      return n ? '<i class="' + cls + '" style="width:' + (n / p.total * 100) + '%" title="' + a.esc(n + ' ' + label) + '"></i>' : '';
+    };
+    return '<div class="fsbar">' + seg(p.watched, 'w', 'watched') + seg(p.dnf, 'd', 'DNF') + seg(p.unsure, 'u', 'unsure') + '</div>' +
+      '<div class="fslegend"><b>' + a.pct(p.pct) + '</b>' +
+        '<span><i class="w"></i>' + p.watched + ' watched</span>' +
+        '<span><i></i>' + p.notWatched + ' remaining</span>' +
+        (p.unsure ? '<span><i class="u"></i>' + p.unsure + ' unsure</span>' : '') +
+        (p.dnf ? '<span><i class="d"></i>' + p.dnf + ' DNF</span>' : '') + '</div>';
+  }
+
+  function branchEditor(a, x) {
+    var names = {};
+    x.frames.forEach(function (fr) { if (fr.branch) names[fr.branch] = 1; });
+    var listId = 'fsbl_' + x.coll.collection_id;
+    return '<div class="fsedit"><div class="small muted" style="margin-bottom:8px">Give an entry a branch name to put it on its own track (say <i>Annabelle</i> or <i>The Nun</i> for The Conjuring). ' +
+        'Leave it blank for the main line. Order within each track still follows the list order.</div>' +
+      '<datalist id="' + a.esc(listId) + '">' + Object.keys(names).map(function (n) { return '<option value="' + a.esc(n) + '">'; }).join('') + '</datalist>' +
+      x.frames.map(function (fr) {
+        return '<div class="row"><span class="t small"><span class="faint">' + a.esc(frameLabel(fr)) + '</span> ' + a.esc(fr.film.key) + '</span>' +
+          '<input class="input" list="' + a.esc(listId) + '" data-fsbranch="' + a.esc(fr.entry.id) + '" value="' + a.esc(fr.branch) + '" placeholder="Main line" style="width:220px"></div>';
+      }).join('') +
+      '<div class="toolbar" style="margin-top:10px"><button class="btn primary" data-fsbsave="' + a.esc(x.coll.collection_id) + '">Save branches</button>' +
+      '<button class="btn ghost" data-fsbedit="">Cancel</button></div></div>';
+  }
+
+  /** Franchise Filmstrip: each franchise as a reel of posters in order. Watched lights up, the next one glows. */
+  function renderFilmstrip(a, M, tabs) {
+    rememberScroll(a);
+    var list = CollLogic.filmstrips(M, st.fsShow, st.fsSort);
+    var all = CollLogic.filmstrips(M, '', 'order');
+    var done = all.filter(function (x) { return x.state === 'Complete'; }).length;
+    var going = all.filter(function (x) { return x.p.watched > 0 && x.state !== 'Complete'; }).length;
+    var opt = function (cur) {
+      return function (o) { return '<option value="' + a.esc(o[0]) + '"' + (cur === o[0] ? ' selected' : '') + '>' + a.esc(o[1]) + '</option>'; };
+    };
+    var reels = list.map(function (x) {
+      var c = x.coll, p = x.p;
+      var branched = x.tracks.length > 1 || (x.tracks[0] && x.tracks[0].name);
+      var trackHtml = x.tracks.map(function (t) {
+        var lit = t.frames.filter(function (fr) { return fr.film.status === 'Watched'; }).length;
+        return (branched ? '<div class="fstrack"><span>' + (t.name ? '⑂ ' + a.esc(t.name) : '🔪 Main line') + '</span><span class="faint">' + lit + '/' + t.frames.length + '</span></div>' : '') +
+          '<div class="fstrip" data-fs="' + a.esc(c.collection_id + '|' + t.name) + '"><div class="reel">' + t.frames.map(function (fr) { return frameHtml(a, fr); }).join('') + '</div></div>';
+      }).join('');
+      var nextFr = x.frames.filter(function (fr) { return fr.next; })[0];
+      var complete = p.total && x.state === 'Complete';
+      return '<div class="panel fsr' + (complete ? ' fsdone' : '') + '">' +
+        '<div class="fsh"><h3 data-copen="' + a.esc(c.collection_id) + '" title="Open the list">' + a.esc(c.icon) + ' ' + a.esc(c.name) + '</h3>' + stateBadge(x.state) +
+          '<span class="grow"></span>' +
+          (nextFr ? '<span class="small">Next up: ' + a.filmLink(nextFr.film) + '</span>'
+            : complete ? '<button class="btn small" data-fsparty="' + a.esc(c.collection_id) + '">Every frame lit 🩸 Relive it</button>' : '') +
+          (x.frames.length ? '<button class="btn ghost small" data-fsbedit="' + a.esc(st.fsEdit === c.collection_id ? '' : c.collection_id) + '" title="Split connected universes onto their own tracks">⑂ Branches</button>' : '') +
+        '</div>' +
+        (p.total ? fsBar(a, p) : '') +
+        (x.frames.length ? trackHtml : '<div class="empty">No films on this franchise yet. Open it to add some.</div>') +
+        (st.fsEdit === c.collection_id ? branchEditor(a, x) : '') +
+      '</div>';
+    }).join('');
+    setTimeout(function () { restoreScroll(a); }, 0);
+    return a.topBar('Collections', 'Every list you own, nothing you have to scroll a spreadsheet for. 📚') +
+      '<div class="toolbar">' + tabs + '</div>' +
+      '<div class="toolbar"><span class="muted">Every franchise as a reel, in your order. Watched frames light up, the next one glows, click any poster to open it. ' +
+        all.length + ' franchise' + (all.length === 1 ? '' : 's') + ', ' + going + ' on the go, ' + done + ' complete.</span></div>' +
+      '<div class="toolbar"><div class="seg">' + FS_SHOW.map(function (o) {
+          return '<button data-fsshow="' + o[0] + '" class="' + (st.fsShow === o[0] ? 'on' : '') + '">' + o[1] + '</button>';
+        }).join('') + '</div>' +
+        '<select data-fssort>' + FS_SORT.map(opt(st.fsSort)).join('') + '</select>' +
+        '<span class="grow"></span><span class="seg">' + FS_SIZES.map(function (z) {
+          return '<button data-fssize="' + z[1] + '" class="' + (st.fsSize === z[1] ? 'on' : '') + '" style="min-width:34px">' + z[0] + '</button>';
+        }).join('') + '</span></div>' +
+      (reels ? '<div style="--fw:' + st.fsSize + 'px">' + reels + '</div>'
+        : '<div class="panel empty">' + (all.length ? 'No franchises match that filter.' : 'No franchises yet. Make one in the 🔪 Franchise tab.') + '</div>');
+  }
+
+  /** The finished-franchise party: every poster lit, the best and worst of the bunch. */
+  function showParty(a, collId) {
+    var M = a.model(), c = M.coll[collId];
+    if (!c) return;
+    var p = CollLogic.progress(M, collId);
+    var seen = {}, films = [];
+    (M.entriesByColl[collId] || []).forEach(function (e) { if (!seen[e.film]) { seen[e.film] = 1; films.push(M.byId[e.film]); } });
+    var rated = films.filter(function (f) { return f.rating !== null && f.rating !== undefined; })
+      .sort(function (x, y) { return y.rating - x.rating || (x.year || 0) - (y.year || 0); });
+    var best = rated[0], worst = rated.length > 1 ? rated[rated.length - 1] : null;
+    var years = films.map(function (f) { return f.year; }).filter(function (y) { return y; });
+    var span = years.length ? Math.min.apply(null, years) + (Math.max.apply(null, years) !== Math.min.apply(null, years) ? '–' + Math.max.apply(null, years) : '') : '';
+    var drops = '';
+    for (var i = 0; i < 34; i++) {
+      drops += '<i style="left:' + Math.round(Math.random() * 100) + '%;animation-delay:' + (Math.random() * 1.6).toFixed(2) + 's;animation-duration:' +
+        (1.6 + Math.random() * 1.6).toFixed(2) + 's;transform:scale(' + (0.6 + Math.random() * 0.9).toFixed(2) + ')"></i>';
+    }
+    var n = films.length, fan = films.slice(0, 14);
+    var el = document.createElement('div');
+    el.className = 'reveal';
+    el.innerHTML = '<div class="rain">' + drops + '</div><div class="revealcard fsparty"><div class="rays"></div>' +
+      '<div class="kicker">Franchise complete</div>' +
+      '<div class="rname">' + a.esc(c.icon) + ' ' + a.esc(c.name) + '</div>' +
+      '<div class="rtier">' + n + ' film' + (n === 1 ? '' : 's') + (span ? ' · ' + a.esc(span) : '') + (p.avg !== null ? ' · avg ' + (Math.round(p.avg * 10) / 10) + '/10' : '') + '</div>' +
+      '<div class="fan">' + fan.map(function (f, k) {
+        var rot = fan.length > 1 ? (k - (fan.length - 1) / 2) * Math.min(7, 50 / fan.length) : 0;
+        return '<div class="fanp" style="transform:rotate(' + rot.toFixed(1) + 'deg);animation-delay:' + (0.15 + k * 0.07).toFixed(2) + 's">' +
+          (f.poster ? '<img src="' + a.esc(f.poster) + '" alt="">' : '<div class="noimg">' + a.esc(f.title) + '</div>') + '</div>';
+      }).join('') + '</div>' +
+      (n > fan.length ? '<div class="small muted">+ ' + (n - fan.length) + ' more</div>' : '') +
+      '<div class="rdetail">' + (best ? '👑 Crown jewel: <b>' + a.esc(best.key) + '</b> (' + best.rating + ')' : 'Not a single rating. Bold.') +
+        (worst && worst.rating < best.rating ? '<br>💀 Weakest link: <b>' + a.esc(worst.key) + '</b> (' + worst.rating + ')' : '') +
+        (p.dnf ? '<br>⚰️ ' + p.dnf + ' DNF along the way. We don’t talk about those.' : '') + '</div>' +
+      '<div class="small muted" style="margin-top:10px">Every frame lit. Survived the whole thing.</div>' +
+      '<div style="margin-top:18px"><button class="btn primary" data-partyok>Hell yeah 🩸</button></div></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-partyok]') || ev.target === el) el.remove();
+    });
+  }
+
+  /** After any save: throws the party for franchises that just became complete. */
+  function checkParty() {
+    var a = App.api, M = a.model();
+    if (!M) return;
+    M.raw.fun = M.raw.fun || {};
+    var complete = M.collList.filter(function (c) {
+      if (c.family !== 'Franchise') return false;
+      var p = CollLogic.progress(M, c.collection_id);
+      return p.total > 0 && CollLogic.franchiseState(p.watched, p.total, p.unsure) === 'Complete';
+    }).map(function (c) { return c.collection_id; });
+    var seen = M.raw.fun.franchises_done;
+    var r = CollLogic.celebrations(seen, complete);
+    if (!seen || r.done.length !== seen.length || r.fresh.length) {
+      M.raw.fun.franchises_done = r.done;
+      a.call('apiSaveUiSetting', 'franchises_done', r.done).catch(function () {});
+    }
+    r.fresh.forEach(function (id) { showParty(a, id); });
+  }
+  window.FilmstripParty = { check: checkParty };
+
+  /** Re-renders replace the reels, so keep each one's sideways scroll; a reel seen for the first time scrolls to its next-up frame. */
+  function rememberScroll(a) {
+    Array.prototype.forEach.call(document.querySelectorAll('.fstrip[data-fs]'), function (el) { st.fsScroll[el.dataset.fs] = el.scrollLeft; });
+  }
+
+  function restoreScroll(a) {
+    Array.prototype.forEach.call(document.querySelectorAll('.fstrip[data-fs]'), function (el) {
+      el.style.scrollBehavior = 'auto';
+      var saved = st.fsScroll[el.dataset.fs];
+      if (saved !== undefined) el.scrollLeft = saved;
+      else {
+        var nx = el.querySelector('.fr.next');
+        if (nx) el.scrollLeft = Math.max(0, nx.offsetLeft - el.clientWidth / 3);
+        st.fsScroll[el.dataset.fs] = el.scrollLeft;
+      }
+      el.style.scrollBehavior = '';
+    });
   }
 
   function renderList(a, M) {
@@ -213,6 +514,31 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
   }
 
   function onClick(ev, a) {
+    var fb = ev.target.closest('[data-fsbedit],[data-fsbsave],[data-fsparty]');
+    if (fb) {
+      if (fb.dataset.fsparty) { showParty(a, fb.dataset.fsparty); return true; }
+      if (fb.dataset.fsbedit !== undefined) { st.fsEdit = fb.dataset.fsbedit; a.render(); return true; }
+      var cid = fb.dataset.fsbsave, M0 = a.model();
+      M0.raw.fun = M0.raw.fun || {};
+      var allB = JSON.parse(JSON.stringify(M0.raw.fun.franchise_branches || {})), mine = {};
+      Array.prototype.forEach.call(document.querySelectorAll('[data-fsbranch]'), function (inp) {
+        var v = inp.value.trim().slice(0, 40);
+        if (v) mine[inp.dataset.fsbranch] = v;
+      });
+      if (Object.keys(mine).length) allB[cid] = mine; else delete allB[cid];
+      a.call('apiSaveUiSetting', 'franchise_branches', allB).then(function () {
+        M0.raw.fun.franchise_branches = allB; st.fsEdit = ''; st.fsScroll = {}; a.render(); a.toast('Branches saved', 'ok');
+      }).catch(function (e) { a.toast('Not saved: ' + e.message, 'bad'); });
+      return true;
+    }
+    var fs = ev.target.closest('[data-fsshow],[data-fssize]');
+    if (fs) {
+      if (fs.dataset.fssize) st.fsSize = Number(fs.dataset.fssize);
+      else st.fsShow = fs.dataset.fsshow;
+      st.fsScroll = {};
+      a.render();
+      return true;
+    }
     var t = ev.target.closest('[data-cfam],[data-copen],[data-cback],[data-cshow],[data-cmove],[data-cremove],[data-cslot],[data-caddfilm],[data-cnewfilm],[data-cnew],[data-cedit]');
     if (!t) return false;
     var d = t.dataset, M = a.model();
@@ -281,6 +607,14 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
     return true;
   }
 
-  App.view('collections', { render: render, onClick: onClick, onInput: onInput });
+  function onChange(ev, a) {
+    if (ev.target.dataset.fssort === undefined) return false;
+    st.fsSort = ev.target.value;
+    st.fsScroll = {};
+    a.render();
+    return true;
+  }
+
+  App.view('collections', { render: render, onClick: onClick, onInput: onInput, onChange: onChange });
 })();
 </script>
