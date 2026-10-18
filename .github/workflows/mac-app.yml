@@ -1,0 +1,64 @@
+# Builds Horror HQ for Mac (mac/) on GitHub's Mac runners and publishes the .dmg as a pre-release.
+# Runs when the Mac app's own files change; after web-app changes in src/, run it by hand
+# (Actions > Mac app > Run workflow) so the app picks them up.
+name: Mac app
+
+on:
+  push:
+    paths:
+      - 'mac/**'
+      - '.github/workflows/mac-app.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mac-app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mac
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Rust for Intel and Apple Silicon
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mac/src-tauri
+
+      - run: npm ci
+
+      - name: Bundle the web app
+        run: node build_web.js
+
+      - name: Build the app and .dmg
+        run: npx tauri build --target universal-apple-darwin
+
+      - name: Publish as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          cp "$DMG" Horror-HQ.dmg
+          gh release create "mac-build-${{ github.run_number }}" Horror-HQ.dmg \
+            --target "${{ github.sha }}" --prerelease \
+            --title "Horror HQ for Mac, build ${{ github.run_number }}" \
+            --notes "Built from ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}. Download Horror-HQ.dmg, open it and drag Horror HQ into Applications."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Horror-HQ-dmg
+          path: mac/Horror-HQ.dmg
+          retention-days: 14

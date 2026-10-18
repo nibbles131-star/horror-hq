@@ -1,0 +1,13 @@
+/* First-run import screen for the Mac app; leans on the app's own theme variables. */
+.mac-import { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #3a0508 0%, #0b0506 70%); padding: 24px; }
+.mac-card { max-width: 560px; background: rgba(20, 6, 8, .92); border: 1px solid rgba(255, 40, 40, .35); border-radius: 18px;
+  padding: 34px 38px; box-shadow: 0 0 60px rgba(255, 0, 0, .18); color: #f3e9e4; font-family: Inter, system-ui, sans-serif; line-height: 1.5; }
+.mac-skull { font-size: 64px; text-align: center; filter: drop-shadow(0 0 18px rgba(255, 30, 30, .6)); }
+.mac-card h1 { font-family: Creepster, Impact, sans-serif; color: #ff2b2b; text-align: center; font-size: 42px; letter-spacing: 2px; margin: 6px 0 14px; font-weight: 400; }
+.mac-card ol { padding-left: 22px; }
+.mac-card li { margin: 8px 0; }
+.mac-card code { background: rgba(255, 255, 255, .08); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+.mac-pick { display: block; text-align: center; margin: 22px auto 10px; cursor: pointer; font-size: 16px; padding: 12px 18px; }
+.mac-small { font-size: 12px; opacity: .65; text-align: center; }
+.mac-bad { background: rgba(255, 0, 0, .14); border: 1px solid rgba(255, 60, 60, .5); padding: 10px 12px; border-radius: 8px; }

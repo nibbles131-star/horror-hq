@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#8a0d12"/>
+      <stop offset="0.55" stop-color="#3d0507"/>
+      <stop offset="1" stop-color="#120102"/>
+    </radialGradient>
+    <linearGradient id="bone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff8ec"/>
+      <stop offset="1" stop-color="#d9ccb4"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="26" result="b"/>
+      <feFlood flood-color="#ff1a1a" flood-opacity="0.55"/>
+      <feComposite in2="b" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <!-- blood dripping from the top edge -->
+    <g fill="#b3000c"><rect x="100" y="100" width="824" height="66"/><circle cx="120" cy="166" r="16"/><circle cx="160" cy="166" r="22"/><circle cx="200" cy="166" r="16"/><circle cx="240" cy="166" r="22"/><circle cx="280" cy="166" r="16"/><circle cx="320" cy="166" r="22"/><circle cx="360" cy="166" r="16"/><circle cx="400" cy="166" r="22"/><circle cx="440" cy="166" r="16"/><circle cx="480" cy="166" r="22"/><circle cx="520" cy="166" r="16"/><circle cx="560" cy="166" r="22"/><circle cx="600" cy="166" r="16"/><circle cx="640" cy="166" r="22"/><circle cx="680" cy="166" r="16"/><circle cx="720" cy="166" r="22"/><circle cx="760" cy="166" r="16"/><circle cx="800" cy="166" r="22"/><circle cx="840" cy="166" r="16"/><circle cx="880" cy="166" r="22"/><circle cx="920" cy="166" r="16"/><rect x="130.0" y="150" width="40" height="70"/><circle cx="150" cy="220" r="24.0"/><rect x="200.0" y="150" width="30" height="150"/><circle cx="215" cy="300" r="19.0"/><rect x="267.0" y="150" width="46" height="95"/><circle cx="290" cy="245" r="27.0"/><rect x="353.0" y="150" width="34" height="200"/><circle cx="370" cy="350" r="21.0"/><rect x="426.0" y="150" width="28" height="80"/><circle cx="440" cy="230" r="18.0"/><rect x="498.0" y="150" width="44" height="130"/><circle cx="520" cy="280" r="26.0"/><rect x="585.0" y="150" width="30" height="230"/><circle cx="600" cy="380" r="19.0"/><rect x="648.0" y="150" width="40" height="90"/><circle cx="668" cy="240" r="24.0"/><rect x="727.0" y="150" width="36" height="170"/><circle cx="745" cy="320" r="22.0"/><rect x="805.0" y="150" width="30" height="105"/><circle cx="820" cy="255" r="19.0"/><rect x="858.0" y="150" width="44" height="60"/><circle cx="880" cy="210" r="26.0"/></g>
+    <!-- skull -->
+    <g filter="url(#glow)">
+      <path fill="url(#bone)" d="M512 290c-150 0-252 98-252 232 0 76 32 130 84 164v74c0 26 20 44 44 44h248c24 0 44-18 44-44v-74c52-34 84-88 84-164 0-134-102-232-252-232z"/>
+      <!-- eyes -->
+      <path fill="#1a0203" d="M352 540c0-48 36-78 82-78 40 0 66 26 66 64 0 50-38 86-86 86-38 0-62-28-62-72z"/>
+      <path fill="#1a0203" d="M672 540c0-48-36-78-82-78-40 0-66 26-66 64 0 50 38 86 86 86 38 0 62-28 62-72z"/>
+      <circle cx="430" cy="548" r="14" fill="#ff2b2b"/>
+      <circle cx="594" cy="548" r="14" fill="#ff2b2b"/>
+      <!-- nose -->
+      <path fill="#1a0203" d="M512 628l-30 62c-5 11 3 20 14 16l16-6 16 6c11 4 19-5 14-16z"/>
+      <!-- teeth -->
+      <g fill="#1a0203">
+        <rect x="414" y="752" width="10" height="56" rx="5"/>
+        <rect x="466" y="756" width="10" height="56" rx="5"/>
+        <rect x="548" y="756" width="10" height="56" rx="5"/>
+        <rect x="600" y="752" width="10" height="56" rx="5"/>
+        <rect x="507" y="758" width="10" height="56" rx="5"/>
+      </g>
+      <!-- a crack -->
+      <path fill="none" stroke="#7a6a55" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" d="M560 296l-18 54 26 30-24 52"/>
+    </g>
+  </g>
+</svg>

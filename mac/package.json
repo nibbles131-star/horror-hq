@@ -1,0 +1,14 @@
+{
+  "name": "horror-hq-mac",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Horror HQ as a Mac app: the same screens as the Apps Script web app, running on a data file in Documents.",
+  "scripts": {
+    "web": "node build_web.js",
+    "icons": "tauri icon art/icon.png --output src-tauri/icons",
+    "build": "node build_web.js && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

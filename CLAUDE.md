@@ -14,3 +14,6 @@
   (type those as `\\u0001`). A size mismatch after upload means a byte changed: fix and re-upload before release.json.
 - Never upload release.json until every listed file is up; an install that runs mid-upload fails its checksum check
   (harmless, but it scares Tommy).
+- Mac app (Tauri) lives in `mac/`, built in stages Tommy approves one at a time; see `mac/README.md`. It reuses `src/`
+  unchanged, so keep `src/` free of Apps-Script-only globals beyond those `mac/shim.js` stands in for. Pushing under `mac/`
+  triggers the "Mac app" workflow, which publishes `Horror-HQ.dmg` as a GitHub pre-release.
