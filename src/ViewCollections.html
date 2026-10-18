@@ -238,6 +238,9 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
       '<div class="toolbar"><span class="muted">' + a.esc(fam.blurb) + ' ' + fp.lists + ' list' + (fp.lists === 1 ? '' : 's') + ', ' +
         fp.watched + ' of ' + fp.total + ' films watched (' + a.pct(fp.total ? fp.watched / fp.total : 0) + ').</span><span class="grow"></span>' +
         (LOCKED[st.family] ? '' : '<button class="btn" data-cnew>+ New ' + a.esc(st.family) + ' list</button>') + '</div>' +
+      (st.family === 'Bestiary' ? '<div class="cx-entrance" data-nav="codex"><span style="font-size:40px">📜</span><div><b>Open the Bestiary Codex</b>' +
+        '<div class="small muted">The same fifteen categories as a cursed field guide: chapter covers, seals, specimen records and cross-references.</div></div>' +
+        '<span class="grow"></span><span style="font-size:22px;color:#b8925a">→</span></div>' : '') +
       (cards ? '<div class="grid g3">' + cards + '</div>' : '<div class="panel empty">No ' + a.esc(st.family) + ' lists yet.</div>');
   }
 

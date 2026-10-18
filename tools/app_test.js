@@ -550,4 +550,39 @@ assert.strictEqual(new Set(earnedZ.map(e => e.key)).size, earnedZ.length);
 const funZ = run(`apiSaveUiSetting('hall_of_fame', ['a', 'b'])`);
 assert.deepStrictEqual(run('apiBootstrap()').fun.hall_of_fame, ['a', 'b'], 'funZ settings round-trip through bootstrap');
 
+// Bestiary Codex (browser logic): chapters mirror the trophy maths, cross-refs only list real memberships.
+const CXL = loadViewZ.length && (() => {
+  const src = fs.readFileSync(path.join(SRC, 'ViewCodex.html'), 'utf8');
+  const m = { exports: {} };
+  new Function('module', 'HQ', src.match(/<script>([\s\S]*?)<\/script>/)[1])(m, HQ);
+  return m.exports;
+})();
+const MC = HQ.build(run('apiBootstrap()'));
+const chs = CXL.chapters(MC, HQ);
+assert.strictEqual(chs.length, 15, 'fifteen chapters');
+assert.strictEqual(CXL.roman(13), 'XIII');
+assert.strictEqual(chs.find(c => c.coll.name === 'Werewolves').numeral, 'XIII', 'Werewolves is chapter XIII, as in the old sheet order');
+const tz = HQ.trophies(MC);
+chs.forEach(c => {
+  const b = tz.bestiary.find(x => x.name === c.coll.name);
+  assert.strictEqual(c.watched, b.watched, 'codex watched matches the trophy cabinet for ' + c.coll.name);
+  assert.strictEqual(c.unexplored, b.watched === 0);
+});
+const werew = chs.find(c => c.coll.name === 'Werewolves');
+const wolfFilm = werew.films[0].film;
+const aqua = chs.find(c => c.coll.name.startsWith('Aquatic'));
+HQ.addEntry(MC, { id: 'E99999', coll: aqua.coll.collection_id, film: wolfFilm.id, slot: '', seq: 99, sourceNote: '', contextNote: '' });
+const xr = CXL.crossRefs(MC, wolfFilm.id, werew.coll.collection_id);
+assert.deepStrictEqual(xr.beasts.map(c => c.name), [aqua.coll.name], 'cross-reference lists the other chapter only');
+assert.strictEqual(CXL.recent(MC, 3)[0].film.id, wolfFilm.id, 'newest entry id comes first in Recently catalogued');
+const mz = CXL.master(MC, HQ, CXL.chapters(MC, HQ));
+assert.strictEqual(mz.beastmaster.value, tz.core.find(c => c.family === 'Beastmaster').value, 'Master of Beasts is the Beastmaster trophy');
+const fakeList = [{ film: { key: 'A (2000)', status: 'Watched', rating: 6, year: 2000 } }, { film: { key: 'B (1990)', status: 'Watched', rating: 9, year: 1990 } },
+  { film: { key: 'C (1980)', status: 'Not watched', rating: null, year: 1980 } }, { film: { key: 'D (1970)', status: 'DNF', rating: 2, year: 1970 } }];
+assert.strictEqual(CXL.featured(fakeList).spec.film.key, 'B (1990)', 'prize specimen = best-rated watched');
+assert.strictEqual(CXL.featured(fakeList.slice(2)).kind, 'awaiting');
+assert.deepStrictEqual(CXL.filter(fakeList, 'unwatched', 'order').map(s => s.film.key), ['C (1980)']);
+assert.deepStrictEqual(CXL.filter(fakeList, '', 'year').map(s => s.film.key), ['D (1970)', 'C (1980)', 'B (1990)', 'A (2000)']);
+assert.deepStrictEqual(CXL.filter(fakeList, 'watched', 'rating').map(s => s.film.key), ['B (1990)', 'A (2000)']);
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);
