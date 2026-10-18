@@ -377,7 +377,7 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
     });
   }
 
-  /** After any save: throws the party for franchises that just became complete. */
+  /** Whenever Collections draws (including after a save from the drawer): throws the party for franchises that just became complete. */
   function checkParty() {
     var a = App.api, M = a.model();
     if (!M) return;
@@ -395,7 +395,6 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
     }
     r.fresh.forEach(function (id) { showParty(a, id); });
   }
-  window.FilmstripParty = { check: checkParty };
 
   /** Re-renders replace the reels, so keep each one's sideways scroll; a reel seen for the first time scrolls to its next-up frame. */
   function rememberScroll(a) {
@@ -476,6 +475,7 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
 
   function render(a) {
     var M = a.model();
+    setTimeout(checkParty, 0);
     if (st.coll && !M.coll[st.coll]) st.coll = null;
     return st.coll ? renderList(a, M) : renderOverview(a, M);
   }
