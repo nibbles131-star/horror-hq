@@ -1,6 +1,6 @@
 [package]
 name = "horror-hq"
-version = "0.1.0"
+version = "0.2.0"
 description = "Horror HQ"
 edition = "2021"
 
@@ -9,6 +9,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+ureq = "3"
 
 [profile.release]
 strip = true
