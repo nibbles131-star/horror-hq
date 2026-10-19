@@ -36,6 +36,13 @@ Stats. Search uses free sources the worker can reach from the window (CORS): Ope
 TMDB (poster key) or TVmaze, and Wikipedia's video game articles. TMDB TV posters go through the poster cache;
 other covers load straight from their sites and fall back to a placeholder when offline.
 
+Stage 7: cross-realm extras, all in `src/`. The Adaptation Web (`ApiWeb.gs`, `ViewWeb.html`, tables `WebLinks`/`WebNodes`)
+links any films, books, shows and games into a family tree and asks Wikidata (no key) what else is connected; Add drops a
+suggestion into its realm and links it, ✕ remembers the rejection (`Dismissals`). The Oracle (`ViewOracle.html`) recommends from
+TMDB (films, TV), Open Library (books) and Wikipedia's "more like this" (games). The Horror Atlas (`ViewAtlas.html`) is the
+Passport as a pre-drawn world map (Natural Earth via d3-geo, embedded so it works offline). ⌘K (`ViewSearch.html`) searches
+every realm, list and section. The Franchise Filmstrip moved out of Collections into its own section.
+
 Build: push a change under `mac/` and the "Mac app" workflow publishes `Horror-HQ.dmg` as a
 pre-release. Locally: `npm ci && npm run build` (needs Rust; on Linux, libwebkit2gtk-4.1-dev).
 Icons come from `art/icon.svg` → `art/icon.png` → `npm run icons`.

@@ -7,13 +7,19 @@
  * can't overwrite a newer edit, writes only the affected rows and records an audit entry.
  */
 
+var WRITE_DEPTH_ = 0;
+
+/** Runs fn holding the script lock. Re-entrant, so one write (adopting a suggestion) can reuse the others. */
 function withWriteLock_(fn) {
+  if (WRITE_DEPTH_) return fn();
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw new Error('Horror HQ is busy saving something else. Try again in a moment.');
+  WRITE_DEPTH_++;
   try {
     dbClearMemo();
     return fn();
   } finally {
+    WRITE_DEPTH_--;
     lock.releaseLock();
   }
 }
@@ -70,6 +76,7 @@ function apiBootstrap() {
     assignments: dbRead('ChallengeAssignments').map(stripRow_),
     openExceptions: openExceptions,
     media: mediaBootstrap_(),
+    web: webBootstrap_(),
     posters: getSetting('poster_provider', null),
     fun: { hall_of_fame: getSetting('hall_of_fame', []), bingo_card: getSetting('bingo_card', null), trophies_seen: getSetting('trophies_seen', null),
       franchise_branches: getSetting('franchise_branches', {}), franchises_done: getSetting('franchises_done', null) },

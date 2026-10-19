@@ -55,7 +55,7 @@ var MEDIA_KINDS = {
 };
 
 // Tables added after the first release: a workbook that predates them grows the tab on first use.
-var LATE_TABLES_ = { MediaItems: true, MediaLists: true, MediaListEntries: true };
+var LATE_TABLES_ = { MediaItems: true, MediaLists: true, MediaListEntries: true, WebLinks: true, WebNodes: true, Dismissals: true };
 
 /**
  * Column types: s = string (default), n = number or blank, b = TRUE/FALSE,
@@ -181,6 +181,18 @@ var SCHEMA = {
   MediaListEntries: {
     key: 'entry_id',
     cols: ['entry_id', 'list_id', 'item_id', 'sequence:n', 'note', 'created_at:t']
+  },
+  WebLinks: {
+    key: 'link_id',
+    cols: ['link_id', 'from_key', 'to_key', 'relation', 'note', 'source', 'created_at:t']
+  },
+  WebNodes: {
+    key: 'node_key',
+    cols: ['node_key', 'qid', 'label', 'checked_at:t']
+  },
+  Dismissals: {
+    key: 'key',
+    cols: ['key', 'title', 'context', 'created_at:t']
   },
   MigrationExceptions: {
     key: 'exception_id',

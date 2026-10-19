@@ -84,7 +84,7 @@ var CollLogic = (function () {
     return out.filter(function (t) { return t.frames.length; });
   }
 
-  /** Franchises for the Filmstrip tab: filtered by state and sorted. */
+  /** Franchises for the Franchise Filmstrip section: filtered by state and sorted. */
   function filmstrips(M, show, sort) {
     var allBranches = (M.raw.fun && M.raw.fun.franchise_branches) || {};
     var out = M.collList.filter(function (c) { return c.family === 'Franchise'; }).map(function (c) {
@@ -212,8 +212,7 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
       var p = CollLogic.familyProgress(M, f.id);
       return '<button data-cfam="' + f.id + '" class="' + (st.family === f.id ? 'on' : '') + '">' + f.icon + ' ' + f.id +
         ' <span class="small" style="opacity:.7">' + p.watched + '/' + p.total + '</span></button>';
-    }).join('') + '<button data-cfam="Filmstrip" class="' + (st.family === 'Filmstrip' ? 'on' : '') + '">🎞️ Filmstrip</button></div>';
-    if (st.family === 'Filmstrip') return renderFilmstrip(a, M, tabs);
+    }).join('') + '</div>';
     var colls = M.collList.filter(function (c) { return c.family === st.family; });
     var fp = CollLogic.familyProgress(M, st.family);
     var cards = colls.map(function (c) {
@@ -292,7 +291,7 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
   }
 
   /** Franchise Filmstrip: each franchise as a reel of posters in order. Watched lights up, the next one glows. */
-  function renderFilmstrip(a, M, tabs) {
+  function renderFilmstrip(a, M) {
     rememberScroll(a);
     var list = CollLogic.filmstrips(M, st.fsShow, st.fsSort);
     var all = CollLogic.filmstrips(M, '', 'order');
@@ -324,8 +323,7 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
       '</div>';
     }).join('');
     setTimeout(function () { restoreScroll(a); }, 0);
-    return a.topBar('Collections', 'Every list you own, nothing you have to scroll a spreadsheet for. 📚') +
-      '<div class="toolbar">' + tabs + '</div>' +
+    return a.topBar('Franchise Filmstrip', 'Every franchise as a reel of posters. 📽️') +
       '<div class="toolbar"><span class="muted">Every franchise as a reel, in your order. Watched frames light up, the next one glows, click any poster to open it. ' +
         all.length + ' franchise' + (all.length === 1 ? '' : 's') + ', ' + going + ' on the go, ' + done + ' complete.</span></div>' +
       '<div class="toolbar"><div class="seg">' + FS_SHOW.map(function (o) {
@@ -546,7 +544,7 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
     if (!t) return false;
     var d = t.dataset, M = a.model();
     if (d.cfam) { st.family = d.cfam; st.coll = null; a.render(); return true; }
-    if (d.copen) { st.coll = d.copen; st.show = ''; st.q = ''; window.scrollTo(0, 0); a.render(); return true; }
+    if (d.copen) { openColl(a, d.copen); return true; }
     if (d.cback !== undefined) { st.coll = null; a.render(); return true; }
     if (d.cshow !== undefined) { st.show = d.cshow; a.render(); return true; }
     if (d.cmove) {
@@ -618,6 +616,18 @@ if (typeof module !== 'undefined') module.exports = CollLogic;
     return true;
   }
 
+  /** Opens one list in Collections from anywhere (the Filmstrip, the ⌘K palette). */
+  function openColl(a, id) {
+    st.coll = id; st.show = ''; st.q = ''; st.family = (a.model().coll[id] || {}).family || st.family;
+    window.scrollTo(0, 0);
+    if (a.view() === 'collections') a.render(); else a.go('collections');
+  }
+
   App.view('collections', { render: render, onClick: onClick, onInput: onInput, onChange: onChange });
+  App.view('filmstrip', {
+    render: function (a) { setTimeout(checkParty, 0); return renderFilmstrip(a, a.model()); },
+    onClick: onClick, onChange: onChange
+  });
+  if (typeof window !== 'undefined') window.Collections = { open: function (id) { openColl(App.api, id); } };
 })();
 </script>

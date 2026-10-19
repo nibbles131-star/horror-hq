@@ -1,0 +1,212 @@
+<style>
+  /* ---------------------------------------------------------------- The Oracle */
+  .orc-hero { position: relative; overflow: hidden; border: 1px solid #4a1a5e; border-radius: 18px; padding: 28px 32px; margin-bottom: 18px;
+    background: radial-gradient(420px 260px at 88% 30%, #9b3bd833, transparent 70%), radial-gradient(500px 300px at 10% 120%, #e3242b33, transparent 70%), linear-gradient(160deg, #170812, #080306); }
+  .orc-hero h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 60px; letter-spacing: 2px; line-height: 1; color: #fff; text-shadow: 0 0 26px #b05cff88, 0 0 50px #e3242b55; }
+  .orc-hero .sub { font-family: var(--type); color: var(--muted); margin-top: 6px; max-width: 620px; }
+  .orc-ball { position: absolute; right: 44px; top: 50%; width: 130px; height: 130px; margin-top: -72px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff8 0, #d9a6ff55 12%, #6a1fa8 45%, #22052e 72%, #0a0210 100%);
+    box-shadow: 0 0 50px #b05cff88, inset 0 -12px 30px #000c; animation: orcfloat 5s ease-in-out infinite; }
+  .orc-ball::after { content: ""; position: absolute; left: 20px; right: 20px; bottom: -26px; height: 16px; border-radius: 50%; background: #000; filter: blur(8px); opacity: .7; }
+  .orc-ball.busy { animation: orcfloat 5s ease-in-out infinite, orcswirl 1.2s linear infinite; }
+  @keyframes orcfloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  @keyframes orcswirl { from { filter: hue-rotate(0deg) brightness(1.2); } to { filter: hue-rotate(360deg) brightness(1.2); } }
+  .orc-seeds { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .orc-seed { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line2); border-radius: 999px; padding: 3px 10px 3px 4px; background: #160709; font-size: 12.5px; }
+  .orc-seed .mimg { width: 24px; height: 36px; border-radius: 4px; font-size: 12px; }
+  .orc-seed button { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 14px; padding: 0 0 0 2px; }
+  .orc-seed button:hover { color: var(--blood3); }
+  .orc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 18px; }
+  .orc-card { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: linear-gradient(180deg, #1a0709, #0d0405); display: flex; flex-direction: column;
+    transition: transform .15s, box-shadow .15s; animation: orcin .4s ease-out both; }
+  .orc-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px #000, 0 0 22px #b05cff44; }
+  @keyframes orcin { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+  .orc-card .pic { aspect-ratio: 2/3; background: linear-gradient(160deg, #3a0c10, #12060a); display: grid; place-items: center; font-size: 42px; position: relative; }
+  .orc-card .pic img, .orc-card .pic .mimg { width: 100%; height: 100%; object-fit: cover; border-radius: 0; font-size: 42px; }
+  .orc-card .pic .kchip { position: absolute; left: 8px; top: 8px; background: #0b0304dd; }
+  .orc-card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+  .orc-card .ttl { font-weight: 800; font-size: 14px; line-height: 1.25; }
+  .orc-card .why { font-family: var(--type); font-size: 11.5px; color: #d6a8ff; }
+  .orc-card .blurb { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .orc-card .acts { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; }
+  .orc-card .acts .btn { flex: 1; justify-content: center; font-size: 12px; padding: 6px; }
+  .orc-card .form { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .orc-card .form select { width: 100%; }
+  .orc-card.added { border-color: #2f5a2c; }
+</style>
+<script>
+/*
+ * The Oracle: "if you liked this, you may like…" across every realm. Seeds are your favourites (films rated 9+,
+ * and books, shows and games you've hearted or rated 9+), or one record from a drawer's "More like this".
+ * Picks come from TMDB (films, TV), Open Library (books) and Wikipedia (games); things you already have and
+ * anything you've turned down are left out. Add drops a pick into its realm, and onto a list if you choose.
+ */
+var Oracle = (function () {
+  var KICON = { film: '🎞️', book: '📖', tv: '📺', game: '🎮' };
+  var os = { realm: 'all', seeds: null, one: false, busy: false, data: null, err: '', show: 'all', adding: null, added: {} };
+  var api = App.api;
+  function esc(s) { return api.esc(s); }
+
+  /** Your favourites as Web node keys, best first. */
+  function favourites(realm) {
+    var M = api.model(), out = [];
+    if (realm === 'all' || realm === 'film') {
+      var films = M.films.filter(function (f) { return f.rating >= 9; });
+      if (films.length < 4) films = M.films.filter(function (f) { return f.rating >= 8; });
+      films.forEach(function (f) { out.push({ key: 'film:' + f.id, r: f.rating }); });
+    }
+    ((M.raw.media || {}).items || []).forEach(function (i) {
+      if ((realm === 'all' || realm === i.kind) && (i.favourite || i.rating_10 >= 9)) out.push({ key: 'item:' + i.item_id, r: (i.rating_10 || 8) + (i.favourite ? 0.5 : 0) });
+    });
+    return out.sort(function (a, b) { return b.r - a.r; }).map(function (x) { return x.key; });
+  }
+  function shuffle(list) {
+    var a = list.slice();
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  /** Up to eight seeds, spread across realms so one realm doesn't drown the rest. */
+  function pickSeeds() {
+    var fav = shuffle(favourites(os.realm));
+    var by = {};
+    fav.forEach(function (k) { var n = Web.info(k); if (n) (by[n.kind] = by[n.kind] || []).push(k); });
+    var out = [], kinds = Object.keys(by);
+    while (out.length < 8 && kinds.some(function (k) { return by[k].length; })) {
+      kinds.forEach(function (k) { if (by[k].length && out.length < 8) out.push(by[k].shift()); });
+    }
+    return out;
+  }
+
+  function cover(src, kind) {
+    return src ? '<img class="mimg" loading="lazy" src="' + esc(src) + '" alt="" data-ph="' + KICON[kind] + '">' : '<span class="mimg">' + KICON[kind] + '</span>';
+  }
+
+  function statusOptions(kind) {
+    var list = kind === 'film' ? ['Not watched', 'Watched', 'DNF'] : ((((api.model().raw.media || {}).kinds || {})[kind]) || {}).statuses || [];
+    return list.map(function (s) { return [s, s]; });
+  }
+  function destOptions(kind) {
+    var M = api.model();
+    if (kind === 'film') {
+      // Bestiary and Franchise first: the lists a new find most often belongs on.
+      var order = { Bestiary: 0, Franchise: 1 };
+      return M.collList.slice().sort(function (a, b) {
+        return (order[a.family] === undefined ? 9 : order[a.family]) - (order[b.family] === undefined ? 9 : order[b.family]);
+      }).map(function (c) { return [c.collection_id, c.family + ' • ' + c.name]; });
+    }
+    return ((M.raw.media || {}).lists || []).filter(function (l) { return l.kind === kind; }).map(function (l) { return [l.list_id, (l.icon ? l.icon + ' ' : '') + l.name]; });
+  }
+
+  function itemCard(r, n) {
+    var added = os.added[r.key];
+    var kname = r.kind === 'film' ? 'Film' : r.kind === 'tv' ? 'TV' : r.kind === 'game' ? 'Game' : r.comic ? 'Comic' : 'Book';
+    var body = '<div class="ttl">' + esc(r.title) + '</div><div class="small muted">' + esc([r.year, r.creator].filter(Boolean).join(' · ')) + '</div>' +
+      (r.because && r.because.length ? '<div class="why">Because you loved ' + esc(r.because.slice(0, 2).join(' & ')) + (r.because.length > 2 ? ' +' + (r.because.length - 2) : '') + '</div>' : '') +
+      (r.blurb ? '<div class="blurb">' + esc(r.blurb) + '</div>' : '');
+    var acts;
+    if (added) acts = '<div class="acts"><button class="btn" data-oopen="' + esc(added) + '">✓ Added · open</button></div>';
+    else if (os.adding === r.key) {
+      acts = '<div class="form"><select id="oa_status">' + api.options(statusOptions(r.kind), '', null) + '</select>' +
+        '<select id="oa_dest">' + api.options(destOptions(r.kind), '', r.kind === 'film' ? 'Library only (no list)' : 'No list') + '</select>' +
+        (r.kind === 'film' && !r.year ? '<input class="input" id="oa_year" type="number" placeholder="Release year">' : '') +
+        '<div class="acts"><button class="btn primary" data-oadopt="' + esc(r.key) + '">Add it</button><button class="btn ghost" data-oadd="">Cancel</button></div></div>';
+    } else acts = '<div class="acts"><button class="btn primary" data-oadd="' + esc(r.key) + '">+ Add</button><button class="btn ghost" data-oreject="' + esc(r.key) + '">Not for me</button></div>';
+    return '<div class="orc-card' + (added ? ' added' : '') + '" style="animation-delay:' + Math.min(n, 20) * 0.03 + 's"><div class="pic">' + cover(r.cover, r.kind) +
+      '<span class="kchip k-' + r.kind + '">' + kname + '</span></div><div class="body">' + body + acts + '</div></div>';
+  }
+
+  function render(a) {
+    api = a;
+    if (!os.seeds) os.seeds = pickSeeds();
+    var seeds = os.seeds.map(Web.info).filter(Boolean);
+    var items = os.data ? os.data.items.filter(function (r) { return os.show === 'all' || r.kind === os.show; }) : [];
+    var kinds = os.data ? os.data.items.reduce(function (o, r) { o[r.kind] = (o[r.kind] || 0) + 1; return o; }, {}) : {};
+    return '<div class="orc-hero"><div class="orc-ball' + (os.busy ? ' busy' : '') + '"></div><h1>The Oracle 🔮</h1>' +
+        '<div class="sub">' + (os.one && seeds[0] ? 'Gazing into <b>' + esc(seeds[0].title) + '</b>. What else will haunt you the same way?'
+          : 'Feed it your favourites and it sees what you\'ll love next, across films, books, comics, shows and games. Only things you don\'t have yet.') + '</div></div>' +
+      '<div class="panel"><div class="toolbar">' + (os.one ? '<span class="muted">One seed</span>' : '<div class="seg">' + [['all', 'Everything'], ['film', '🎞️ Films'], ['book', '📖 Books'], ['tv', '📺 TV'], ['game', '🎮 Games']].map(function (o) {
+          return '<button data-orealm="' + o[0] + '" class="' + (os.realm === o[0] ? 'on' : '') + '">' + o[1] + '</button>';
+        }).join('') + '</div>') + '<span class="grow"></span>' +
+        (os.one ? '<button class="btn ghost" data-ofav>Use my favourites instead</button>' : '<button class="btn ghost" data-oshuffle>🎲 Different favourites</button>') +
+        '<button class="btn primary" data-orun' + (seeds.length && !os.busy ? '' : ' disabled') + '>' + (os.busy ? 'Consulting…' : 'Consult the Oracle') + '</button></div>' +
+        '<div class="orc-seeds"><span class="small faint">Seeds:</span>' + (seeds.length ? seeds.map(function (n) {
+          return '<span class="orc-seed">' + cover(n.cover, n.kind) + esc(n.title) + '<button data-ounseed="' + esc(n.key) + '" title="Leave this one out">✕</button></span>';
+        }).join('') : '<span class="small muted">No favourites here yet. Rate something 9 or 10, or ♡ it, and it can seed the Oracle.</span>') + '</div></div>' +
+      (os.err ? '<div class="panel empty">' + esc(os.err) + '</div>' : '') +
+      (os.data ? '<div class="toolbar" style="margin-top:6px"><h2 style="margin:0">' + os.data.items.length + ' visions</h2><span class="grow"></span>' +
+          (Object.keys(kinds).length > 1 ? '<div class="seg">' + ['all'].concat(Object.keys(kinds)).map(function (k) {
+            return '<button data-oshow="' + k + '" class="' + (os.show === k ? 'on' : '') + '">' + (k === 'all' ? 'All' : KICON[k] + ' ' + kinds[k]) + '</button>';
+          }).join('') + '</div>' : '') + '</div>' +
+          (os.data.notes || []).map(function (t) { return '<div class="small muted" style="margin-bottom:8px">' + esc(t) + '</div>'; }).join('') +
+          (items.length ? '<div class="orc-grid">' + items.map(itemCard).join('') + '</div>' : '<div class="panel empty">The mists are empty. Try different seeds.</div>')
+        : !os.busy ? '<div class="panel empty">Press <b>Consult the Oracle</b> and it will read your seeds.</div>' : '');
+  }
+
+  function run() {
+    var seeds = (os.seeds || []).slice();
+    if (!seeds.length) return;
+    os.busy = true; os.err = ''; os.adding = null;
+    api.render();
+    api.call('apiOracle', seeds).then(function (d) {
+      os.busy = false; os.data = d; os.show = 'all';
+      if (api.view() === 'oracle') api.render();
+    }).catch(function (e) {
+      os.busy = false; os.err = 'The Oracle can\'t see right now (' + (e && e.message ? e.message : e) + ').';
+      if (api.view() === 'oracle') api.render();
+    });
+  }
+
+  function byKey(k) { return os.data ? os.data.items.filter(function (r) { return r.key === k; })[0] : null; }
+
+  function onClick(ev, a) {
+    api = a;
+    var t = ev.target.closest('[data-oseed],[data-orealm],[data-oshuffle],[data-ofav],[data-orun],[data-ounseed],[data-oshow],[data-oadd],[data-oadopt],[data-oreject],[data-oopen]');
+    if (!t) return false;
+    var d = t.dataset;
+    if (d.oseed) {
+      api.closeDrawer();
+      if (window.Media && Media.closeDrawer) Media.closeDrawer();
+      os.seeds = [d.oseed]; os.one = true; os.data = null; os.added = {};
+      api.go('oracle');
+      run();
+      return true;
+    }
+    if (d.orealm) { os.realm = d.orealm; os.seeds = pickSeeds(); os.data = null; api.render(); return true; }
+    if (d.oshuffle !== undefined) { os.seeds = pickSeeds(); api.render(); return true; }
+    if (d.ofav !== undefined) { os.one = false; os.seeds = pickSeeds(); os.data = null; api.render(); return true; }
+    if (d.orun !== undefined) { run(); return true; }
+    if (d.ounseed) { os.seeds = os.seeds.filter(function (k) { return k !== d.ounseed; }); api.render(); return true; }
+    if (d.oshow) { os.show = d.oshow; api.render(); return true; }
+    if (d.oadd !== undefined) { os.adding = d.oadd || null; api.render(); return true; }
+    if (d.oopen) { Web.openNode(d.oopen); return true; }
+    if (d.oadopt) {
+      var r = byKey(d.oadopt);
+      if (!r) return true;
+      var sug = Object.assign({}, r);
+      var yr = document.getElementById('oa_year');
+      if (yr) { sug.year = Number(yr.value); if (!sug.year) { api.toast('Films need a release year.', 'bad'); return true; } }
+      t.disabled = true; t.textContent = 'Adding…';
+      api.call('apiAdopt', sug, { status: document.getElementById('oa_status').value, dest: document.getElementById('oa_dest').value }).then(function (res) {
+        os.added[r.key] = res.nodeKey; os.adding = null;
+        return api.refresh().then(function () { api.toast((res.created ? 'Added ' : 'Already had ') + r.title, 'ok'); });
+      }).catch(function (e) { t.disabled = false; t.textContent = 'Add it'; api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.oreject) {
+      var x = byKey(d.oreject);
+      os.data.items = os.data.items.filter(function (i) { return i.key !== d.oreject; });
+      api.render();
+      api.call('apiDismiss', d.oreject, x ? x.title : '', 'oracle').then(function () {
+        api.toast('The Oracle won\'t show ' + (x ? x.title : 'that') + ' again', 'ok', { label: 'Undo', fn: function () {
+          api.call('apiUndismiss', d.oreject).then(function () { if (x) { os.data.items.unshift(x); api.render(); } });
+        } });
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    return false;
+  }
+
+  App.view('oracle', { render: render });
+  return { onClick: onClick, seed: function (key) { os.seeds = [key]; os.one = true; os.data = null; api.go('oracle'); run(); } };
+})();
+</script>

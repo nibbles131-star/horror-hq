@@ -649,4 +649,103 @@ assert.deepStrictEqual([mb.items.length, mb.lists.length, mb.entries.length], [4
 assert.deepStrictEqual(mb.kinds.game.done, ['Beaten', '100%']);
 assert.ok(run('apiExportAll()').tables.MediaItems.length === 4, 'media rides along in the export');
 
+// Adaptation Web + Oracle: links, Wikidata suggestions, adopting, dismissals; faked Wikidata / Wikipedia.
+const WD = {
+  byOl: { results: { bindings: [{ item: { value: 'http://www.wikidata.org/entity/Q1' }, label: { value: 'The Shining' } }] } },
+  near: { results: { bindings: [
+    { item: { value: 'http://www.wikidata.org/entity/Q2' }, rel: { value: 'adaptation' }, dir: { value: 'down' }, label: { value: 'The Shining' },
+      classes: { value: 'Q11424' }, year: { value: '1980' }, tmdb: { value: '694' }, wiki: { value: 'The Shining (film)' }, creator: { value: 'Stanley Kubrick' } },
+    { item: { value: 'http://www.wikidata.org/entity/Q3' }, rel: { value: 'adaptation' }, dir: { value: 'down' }, label: { value: 'The Shining' },
+      classes: { value: 'Q1259759' }, year: { value: '1997' }, wiki: { value: 'The Shining (miniseries)' } },
+    { item: { value: 'http://www.wikidata.org/entity/Q4' }, rel: { value: 'universe' }, dir: { value: 'side' }, label: { value: 'Jack Torrance' }, classes: { value: 'Q95074' } },
+    { item: { value: 'http://www.wikidata.org/entity/Q5' }, rel: { value: 'sequel' }, dir: { value: 'down' }, label: { value: 'Doctor Sleep' },
+      classes: { value: 'Q8261,Q7725634' }, year: { value: '2013' }, ol: { value: 'OL9W' } },
+    { item: { value: 'http://www.wikidata.org/entity/Q5' }, rel: { value: 'franchise' }, dir: { value: 'side' }, label: { value: 'Doctor Sleep' },
+      classes: { value: 'Q8261' }, year: { value: '2013' } }
+  ] } }
+};
+const wfetched = [];
+ctx.UrlFetchApp = { fetch: (url) => {
+  wfetched.push(url);
+  const host = url.split('/')[2];
+  let body = null;
+  if (host === 'query.wikidata.org') {
+    const q = decodeURIComponent(url.split('query=')[1]);
+    body = /wdt:P648 "OL1W"/.test(q) ? WD.byOl : /BIND\("adaptation"/.test(q) ? WD.near : { results: { bindings: [] } };
+  } else if (host === 'en.wikipedia.org' && /morelike/.test(decodeURIComponent(url))) {
+    body = { query: { pages: { 11: { pageid: 11, index: 1, title: 'Signalis', description: '2022 video game' },
+      12: { pageid: 12, index: 2, title: 'Fatal Frame (video game)', description: '2001 video game', thumbnail: { source: 'https://upload.wikimedia.org/ff.jpg' } },
+      13: { pageid: 13, index: 3, title: 'Rule of Rose', description: '2006 video game' } } } };
+  } else if (host === 'en.wikipedia.org') {
+    body = { query: { normalized: [], pages: { 1: { title: 'The Shining (film)', thumbnail: { source: 'https://upload.wikimedia.org/shining.jpg' } } } } };
+  }
+  return { getResponseCode: () => (body ? 200 : 500), getContentText: () => JSON.stringify(body || {}) };
+} };
+const wFilm = run('apiBootstrap()').films[0][0];
+const bookKey = 'item:' + bk;
+const l1 = run(`apiWebLink('${bookKey}', 'film:${wFilm}', 'inspired', '', 'manual')`);
+assert.ok(l1.link_id === 'WL00001' && l1.from_key === bookKey);
+assert.throws(() => run(`apiWebLink('film:${wFilm}', '${bookKey}', 'sequel')`), /already linked/, 'one link per pair, either way round');
+assert.throws(() => run(`apiWebLink('${bookKey}', '${bookKey}', 'sequel')`), /itself/);
+assert.throws(() => run(`apiWebLink('${bookKey}', 'film:NOPE', 'sequel')`), /no longer exists/);
+assert.throws(() => run(`apiWebLink('${bookKey}', 'film:${wFilm}', 'cursed')`), /Unknown kind/);
+const l1e = run(`apiWebEditLink('${l1.link_id}', 'remake', true)`);
+assert.ok(l1e.relation === 'remake' && l1e.from_key === 'film:' + wFilm && l1e.to_key === bookKey, 'edit changes the kind and flips direction');
+run(`apiWebUnlink('${l1.link_id}')`);
+
+const sug = run(`apiWebSuggest('${bookKey}')`);
+assert.strictEqual(sug.qid, 'Q1', 'Open Library id finds the Wikidata item without a search');
+assert.ok(!wfetched.some(u => u.includes('wbsearchentities')), 'no title search when an id matched');
+assert.deepStrictEqual(sug.suggestions.map(x => [x.qid, x.kind, x.dir]), [['Q2', 'film', 'down'], ['Q3', 'tv', 'down'], ['Q5', 'book', 'down']],
+  'characters dropped, one row per item keeping its closest relation, sources first then by year');
+assert.strictEqual(sug.suggestions[0].cover, 'https://upload.wikimedia.org/shining.jpg', 'covers come from Wikipedia');
+assert.strictEqual(sug.suggestions[0].creator, 'Stanley Kubrick');
+assert.strictEqual(run('apiBootstrap()').web.nodes.filter(n => n.node_key === bookKey)[0].qid, 'Q1', 'the match is remembered');
+const nWd = wfetched.filter(u => u.includes('%22OL1W%22')).length;
+run(`apiWebSuggest('${bookKey}')`);
+assert.strictEqual(wfetched.filter(u => u.includes('%22OL1W%22')).length, nWd, 'second visit reuses the cached match');
+
+run(`apiDismiss('${sug.suggestions[1].key}', 'The Shining', '${bookKey}')`);
+assert.ok(!run(`apiWebSuggest('${bookKey}')`).suggestions.some(x => x.qid === 'Q3'), 'a rejected suggestion stays gone for this record');
+const wColl = run('apiBootstrap()').collections[0].collection_id;
+const adopted = run(`apiAdopt(${JSON.stringify(sug.suggestions[0])}, {status: 'Watched', dest: '${wColl}', link: {from: '${bookKey}', relation: 'adaptation', dir: 'down'}})`);
+assert.ok(adopted.created && /^film:F\d{5}$/.test(adopted.nodeKey), 'adopting a film adds it to the Film Library');
+assert.ok(adopted.linked.from_key === bookKey && adopted.linked.to_key === adopted.nodeKey && adopted.linked.relation === 'adaptation', 'novel -> film');
+const wb = run('apiBootstrap()');
+const newFilm = adopted.nodeKey.split(':')[1];
+assert.strictEqual(wb.state[newFilm][0], 'Watched', 'adopted with the chosen status');
+assert.ok(wb.entries.some(e => e[1] === wColl && e[2] === newFilm), 'and onto the chosen list');
+assert.strictEqual(wb.web.nodes.filter(n => n.node_key === adopted.nodeKey)[0].qid, 'Q2', 'new records keep their Wikidata match');
+assert.ok(!run(`apiWebSuggest('${bookKey}')`).suggestions.some(x => x.qid === 'Q2'), 'linked records stop being suggested');
+const adoptTwice = run(`apiAdopt(${JSON.stringify(sug.suggestions[0])}, {})`);
+assert.strictEqual(adoptTwice.created, false, 'adopting twice finds the existing film');
+const sug2 = run(`apiWebSuggest('${bookKey}', true)`);
+assert.ok(sug2.suggestions.every(x => x.qid !== 'Q2'), 'a refresh keeps linked records out');
+const dsleep = run(`apiAdopt(${JSON.stringify(sug.suggestions[2])}, {status: 'Want to read', link: {from: '${bookKey}', relation: 'sequel', dir: 'down'}})`);
+assert.ok(dsleep.created && run('apiBootstrap()').media.items.some(i => i.title === 'Doctor Sleep' && i.source === 'openlibrary' && i.source_id === '/works/OL9W'));
+
+const orc = run(`apiOracle(['item:${g2.item_id}', 'film:${wFilm}'])`);
+assert.deepStrictEqual(orc.items.map(x => x.title), ['Fatal Frame', 'Rule of Rose'], 'games you already own are left out, "(video game)" stripped');
+assert.deepStrictEqual(orc.items[0].because, ['Signalis']);
+assert.ok(orc.notes.some(n => /TMDB key/.test(n)), 'film picks without a key say why');
+run(`apiDismiss('wp:12', 'Fatal Frame', 'oracle')`);
+assert.deepStrictEqual(run(`apiOracle(['item:${g2.item_id}'])`).items.map(x => x.title), ['Rule of Rose'], '"Not for me" sticks');
+run(`apiUndismiss('wp:12')`);
+assert.strictEqual(run(`apiOracle(['item:${g2.item_id}'])`).items.length, 2);
+const ex = run('apiExportAll()').tables;
+assert.ok(ex.WebLinks.length === 2 && ex.WebNodes.length >= 2 && ex.Dismissals.length === 1, 'the Web rides along in the export');
+
+// Horror Atlas: country spellings fold onto the map, the rest go "off the map".
+const atlasSrc = fs.readFileSync(path.join(SRC, 'ViewAtlas.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const AT = new Function(atlasSrc.split('(function () {\n  var st =')[0] + '; return AtlasLogic;')();
+assert.deepStrictEqual(['USA', 'UK', 'West Germany', 'japan', 'Hong Kong', 'Narnia'].map(AT.place), ['United States', 'United Kingdom', 'Germany', 'Japan', 'Hong Kong', null]);
+const atFilms = [{ status: 'Watched', rating: 8, countries: ['USA', 'United States'] }, { status: 'Not watched', rating: null, countries: ['Japan'] },
+  { status: 'Watched', rating: 6, countries: ['United States', 'Narnia'] }];
+const atc = AT.countries({ films: atFilms });
+assert.deepStrictEqual(atc.map(c => [c.name, c.films.length, c.watched, c.onMap]), [['United States', 2, 2, true], ['Narnia', 1, 1, false], ['Japan', 1, 0, true]],
+  'USA and United States on one film count once');
+assert.strictEqual(atc[0].avg, 7);
+assert.deepStrictEqual([AT.level(atc[2], 2), AT.level(atc[0], 2), AT.level(null, 2)], ['todo', 'l5', 'none']);
+assert.ok(Object.keys(AT.MAP.paths).length > 170 && AT.MAP.dots['Hong Kong'], 'the map has every country, small ones as dots');
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

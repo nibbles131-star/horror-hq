@@ -307,7 +307,8 @@ var Media = (function () {
     }).join('') + '</div>' : '<div class="empty">' + esc(empty) + '</div>';
   }
   function searchBox() {
-    return '<div class="search"><input id="gsearch" placeholder="Find any film, book, show or game" autocomplete="off"><kbd>/</kbd><div class="suggest" id="suggest" hidden></div></div>';
+    return '<div class="search"><input id="gsearch" placeholder="Find any film, book, show or game" autocomplete="off"><kbd>/</kbd><div class="suggest" id="suggest" hidden></div></div>' +
+      (window.HQSearch ? '<button class="btn ghost cmdk-btn" data-cmdkopen style="margin-left:10px">' + (/Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K') + '</button>' : '');
   }
   function stats(list) {
     return '<div class="stats" style="grid-template-columns:repeat(' + list.length + ',1fr)">' + list.map(function (s) {
@@ -674,6 +675,7 @@ var Media = (function () {
         }).join('') +
         '<div class="toolbar" style="margin-top:8px"><select id="maddlist" style="max-width:300px">' + api.options(lists.filter(function (l) { return !onIt[l.list_id]; }).map(function (l) { return [l.list_id, l.icon + ' ' + l.name]; }), '', lists.length ? 'Add to a list…' : 'No lists yet') + '</select>' +
           '<button class="btn" data-maddtolist>Add</button></div>' +
+      (window.Web ? Web.panel('item:' + i.item_id) : '') +
       '<h3>Details <button class="btn ghost small" data-medit style="margin-left:8px">' + (ui.edit ? 'Cancel' : 'Edit') + '</button></h3>' +
         (ui.edit ? '<div class="mfields">' +
           '<label style="grid-column:span 2">Title<input class="input" id="me_title" value="' + esc(i.title) + '"></label>' +
@@ -1022,6 +1024,12 @@ var Media = (function () {
   register();
 
   return { sections: sections, counts: counts, suggest: suggest, onClick: onClick, onInput: onInput, onChange: onChange, onKey: onKey,
-    open: openItem, KIND: KIND, MILESTONES: MILESTONES };
+    open: openItem, closeDrawer: closeDrawer, cover: function (i, size) { return cover(i, size || ''); },
+    openList: function (listId) {
+      var l = model(M_()).lists.filter(function (x) { return x.list_id === listId; })[0];
+      if (!l) return;
+      ui.list[l.kind] = listId;
+      api.go(l.kind + ':lists');
+    }, KIND: KIND, MILESTONES: MILESTONES };
 })();
 </script>

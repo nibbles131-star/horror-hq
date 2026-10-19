@@ -20,10 +20,12 @@ var App = (function () {
     { id: 'home', icon: '🏠', label: 'Film HQ' },
     { id: 'library', icon: '🎞️', label: 'Film Library' },
     { id: 'collections', icon: '📚', label: 'Collections' },
+    { id: 'filmstrip', icon: '📽️', label: 'Franchise Filmstrip' },
     { id: 'codex', icon: '📜', label: 'Bestiary Codex' },
     { id: 'planner', icon: '📅', label: 'Watch Planner' },
     { id: 'excavator', icon: '🔎', label: 'Horror Excavator' },
     { id: 'wall', icon: '🖼️', label: 'Poster Wall' },
+    { id: 'atlas', icon: '🌍', label: 'Horror Atlas' },
     { id: 'funhouse', icon: '🎰', label: 'The Funhouse' },
     { id: 'shrine', icon: '🕯️', label: 'Hall of Fame' },
     { id: 'stats', icon: '🏆', label: 'Stats + Trophies' },
@@ -37,8 +39,21 @@ var App = (function () {
     { id: 'tv', icon: '📺', label: 'TV', home: 'tv:overview' },
     { id: 'game', icon: '🎮', label: 'Games', home: 'game:overview' }
   ];
-  function realmOf(v) { return v === 'hub' ? 'hub' : v.indexOf(':') > 0 ? v.split(':')[0] : 'films'; }
+  // Cross-realm pages live in the hub.
+  var HUB_SECTIONS = [
+    { id: 'hub', icon: '🏚️', label: 'The Hub' },
+    { id: 'web', icon: '🕸️', label: 'Adaptation Web' },
+    { id: 'oracle', icon: '🔮', label: 'The Oracle' }
+  ];
+  function realmOf(v) {
+    if (HUB_SECTIONS.some(function (s) { return s.id === v; })) return 'hub';
+    return v.indexOf(':') > 0 ? v.split(':')[0] : 'films';
+  }
   function media() { return window.Media || null; }
+  /** Cross-realm modules (the Web, the Oracle, ⌘K search) get every event first, wherever you are. */
+  function extras(kind, ev) {
+    return ['Web', 'Oracle', 'HQSearch'].some(function (n) { return window[n] && window[n][kind] && window[n][kind](ev, api); });
+  }
 
   // ------------------------------------------------------------------ helpers
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -91,7 +106,7 @@ var App = (function () {
   function renderNav() {
     var rn = HQ.rateNext(M).length;
     var realm = realmOf(view);
-    var sections = realm === 'films' ? SECTIONS : realm === 'hub' ? [] : (media() ? media().sections(realm) : []);
+    var sections = realm === 'films' ? SECTIONS : realm === 'hub' ? HUB_SECTIONS : (media() ? media().sections(realm) : []);
     var counts = media() ? media().counts(M) : {};
     $('#nav').innerHTML = '<div class="brand" data-nav="hub">HORROR <span>HQ</span>' +
       '<i class="drip" style="left:96px;--h:16px"></i><i class="drip" style="left:122px;--h:26px;animation-delay:.6s"></i><i class="drip" style="left:141px;--h:11px;animation-delay:1.3s"></i>' +
@@ -102,7 +117,7 @@ var App = (function () {
       (realm === 'hub' ? '<div class="navhead">Choose your poison</div>' + REALMS.slice(1).map(function (r) {
         var n = r.id === 'films' ? M.films.length : (counts[r.id] || 0);
         return '<button data-nav="' + r.home + '" class="realmlink realm-' + r.id + '">' + r.icon + ' ' + esc(r.label) + '<span class="count">' + n + '</span></button>';
-      }).join('') : '<div class="navhead">' + esc(REALMS.filter(function (r) { return r.id === realm; })[0].label) + '</div>') +
+      }).join('') + '<div class="navhead">Across every realm</div>' : '<div class="navhead">' + esc(REALMS.filter(function (r) { return r.id === realm; })[0].label) + '</div>') +
       sections.map(function (s) {
         var badge = s.id === 'home' && (M.raw.openExceptions || rn) ? '<span class="badge">' + rn + '</span>' : '';
         return '<button data-nav="' + s.id + '" class="' + (view === s.id ? 'on' : '') + '">' + s.icon + ' ' + esc(s.label) + badge + '</button>';
@@ -114,7 +129,8 @@ var App = (function () {
   function topBar(title, sub) {
     return '<div class="top"><div><h1>' + esc(title) + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' +
       '<div class="grow"></div><div class="search"><input id="gsearch" placeholder="' + (media() ? 'Find any film, book, show or game' : 'Find any film, alias or year') + '" autocomplete="off"><kbd>/</kbd>' +
-      '<div class="suggest" id="suggest" hidden></div></div></div>';
+      '<div class="suggest" id="suggest" hidden></div></div>' +
+      (window.HQSearch ? '<button class="btn ghost cmdk-btn" data-cmdkopen title="Search every realm, list and section">' + (/Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K') + '</button>' : '') + '</div>';
   }
 
   function render() {
@@ -244,8 +260,9 @@ var App = (function () {
     });
   }
 
+  /** <option>s for a select; blankLabel null leaves out the empty first choice. */
   function options(values, current, blankLabel) {
-    return '<option value="">' + esc(blankLabel) + '</option>' + values.map(function (v) {
+    return (blankLabel === null ? '' : '<option value="">' + esc(blankLabel) + '</option>') + values.map(function (v) {
       var val = Array.isArray(v) ? v[0] : v, label = Array.isArray(v) ? v[1] : v;
       return '<option value="' + esc(val) + '"' + (String(current) === String(val) ? ' selected' : '') + '>' + esc(label) + '</option>';
     }).join('');
@@ -386,6 +403,7 @@ var App = (function () {
         '<input class="input" id="addslot" placeholder="Slot (optional)" style="width:120px"><button class="btn" data-addentry>Add</button></div>' +
 
       (franchise ? '<h3>Franchise order</h3>' + franchise : '') +
+      (window.Web ? Web.panel('film:' + f.id) : '') +
 
       (agenda.length ? '<h3>Scheduled</h3>' + agenda.map(function (a) {
         return '<div class="row"><span class="muted small" style="width:92px">' + esc(fmtDate(a.planned_date)) + '</span><span class="t">' + esc(a.occasion) +
@@ -516,6 +534,7 @@ var App = (function () {
 
   function onClick(ev) {
     if (M && media() && media().onClick(ev, api)) return;
+    if (M && extras('onClick', ev)) return;
     if (viewHandled('onClick', ev)) return;
     var t = ev.target.closest('[data-nav],[data-film],[data-close],[data-setstatus],[data-setrating],[data-setcunt],[data-savereaction],' +
       '[data-reroll],[data-quickrate],[data-libpreset],[data-sort],[data-page],[data-libclear],[data-removeentry],[data-addentry],[data-addfilm],[data-suggest],' +
@@ -605,6 +624,7 @@ var App = (function () {
 
   function onInput(ev) {
     if (M && media() && media().onInput(ev, api)) return;
+    if (M && extras('onInput', ev)) return;
     if (viewHandled('onInput', ev)) return;
     var t = ev.target;
     if (t.id === 'libq') {
@@ -619,6 +639,7 @@ var App = (function () {
 
   function onChange(ev) {
     if (M && media() && media().onChange(ev, api)) return;
+    if (M && extras('onChange', ev)) return;
     if (viewHandled('onChange', ev)) return;
     var k = ev.target.dataset.lib;
     if (!k) return;
@@ -646,6 +667,7 @@ var App = (function () {
   function onKey(ev) {
     var tag = (ev.target.tagName || '').toLowerCase();
     if (M && media() && media().onKey(ev, api)) return;
+    if (M && extras('onKey', ev)) return;
     if (ev.key === '/' && tag !== 'input' && tag !== 'textarea') { ev.preventDefault(); var g = $('#gsearch'); if (g) g.focus(); return; }
     if (ev.key === 'Escape') { if (drawerId) closeDrawer(); var b = $('#suggest'); if (b) b.hidden = true; return; }
     if (ev.target.id === 'pp_q' && ev.key === 'Enter' && posterPick) { posterPick.q = ev.target.value; return posterSearch(M.byId[drawerId]); }
@@ -689,7 +711,8 @@ var App = (function () {
   var api = {
     model: function () { return M; }, $: $, esc: esc, call: call, toast: toast, statusChip: statusChip, ratingCell: ratingCell,
     filmLink: filmLink, thumb: thumb, fmtDate: fmtDate, pct: pct, pick: pick, topBar: topBar, render: render, go: go, openFilm: openFilm,
-    options: options, checkTrophies: checkTrophies, view: function () { return view; }, realms: REALMS, refresh: function () {
+    options: options, checkTrophies: checkTrophies, view: function () { return view; }, realms: REALMS, closeDrawer: closeDrawer,
+    realmOf: realmOf, sections: function () { return { films: SECTIONS, hub: HUB_SECTIONS }; }, refresh: function () {
       return call('apiBootstrap').then(function (raw) { M = HQ.build(raw); render(); checkTrophies(); });
     }
   };

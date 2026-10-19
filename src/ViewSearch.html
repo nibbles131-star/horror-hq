@@ -1,0 +1,184 @@
+<style>
+  /* ---------------------------------------------------------------- ⌘K search */
+  .cmdk-scrim { position: fixed; inset: 0; z-index: 60; background: #050102cc; backdrop-filter: blur(3px); display: flex; justify-content: center; align-items: flex-start; padding-top: 11vh; animation: cmdkin .12s ease-out; }
+  @keyframes cmdkin { from { opacity: 0; } to { opacity: 1; } }
+  .cmdk { width: min(680px, 92vw); max-height: 72vh; display: flex; flex-direction: column; border: 1px solid var(--blood); border-radius: 16px; overflow: hidden;
+    background: linear-gradient(180deg, #1a0709, #0c0304); box-shadow: 0 30px 90px #000, 0 0 40px #e3242b44; }
+  .cmdk .bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line2); }
+  .cmdk .bar span { font-size: 20px; }
+  .cmdk .bar input { flex: 1; background: none; border: 0; outline: 0; color: var(--text); font: 18px/1.3 inherit; font-family: inherit; }
+  .cmdk .bar kbd, .cmdk .foot kbd { font-family: var(--type); font-size: 11px; border: 1px solid var(--line2); border-radius: 5px; padding: 1px 6px; color: var(--muted); }
+  .cmdk .list { overflow: auto; padding: 6px 0 8px; }
+  .cmdk .grp { font-family: var(--type); font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--faint); padding: 10px 18px 4px; }
+  .cmdk .it { display: flex; align-items: center; gap: 12px; padding: 7px 18px; cursor: pointer; }
+  .cmdk .it .ic { width: 30px; text-align: center; font-size: 18px; flex: none; }
+  .cmdk .it .mimg { width: 26px; height: 39px; border-radius: 4px; font-size: 13px; }
+  .cmdk .it .t { flex: 1; min-width: 0; }
+  .cmdk .it .t b { font-weight: 700; }
+  .cmdk .it .t small { display: block; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmdk .it.on { background: linear-gradient(90deg, #3b0a0e, transparent); box-shadow: inset 3px 0 0 var(--blood2); }
+  .cmdk .it.sub { padding-left: 46px; }
+  .cmdk .it.sub .ic { font-size: 13px; color: var(--faint); }
+  .cmdk .foot { display: flex; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--faint); }
+  .cmdk .none { padding: 26px; text-align: center; color: var(--muted); }
+  .top .cmdk-btn { margin-left: 10px; white-space: nowrap; }
+</style>
+<script>
+/*
+ * ⌘K (Ctrl+K on other keyboards): one search across every realm. Films, books, comics, shows and games,
+ * your film collections and media lists, records linked to a match in the Adaptation Web, and a shortcut
+ * to every section. Arrow keys move, Enter opens, Esc closes.
+ */
+var HQSearch = (function () {
+  var st = { open: false, q: '', idx: 0, rows: [] };
+  var api = App.api;
+  var KICON = { film: '🎞️', book: '📖', tv: '📺', game: '🎮' };
+  var SHORTCUTS = ['wall', 'codex', 'filmstrip', 'atlas', 'web', 'oracle', 'hub', 'library', 'collections', 'funhouse'];
+  function esc(s) { return api.esc(s); }
+
+  /** Every section in every realm: {id, icon, label, realm}. */
+  function allSections() {
+    var s = api.sections(), out = [];
+    s.hub.forEach(function (x) { out.push({ id: x.id, icon: x.icon, label: x.label, realm: 'Hub' }); });
+    s.films.forEach(function (x) { out.push({ id: x.id, icon: x.icon, label: x.label, realm: 'Films' }); });
+    if (window.Media) ['book', 'tv', 'game'].forEach(function (k) {
+      var realm = api.realms.filter(function (r) { return r.id === k; })[0];
+      Media.sections(k).forEach(function (x) { out.push({ id: x.id, icon: x.icon, label: x.label, realm: realm ? realm.label : k }); });
+    });
+    return out;
+  }
+
+  function nodeRow(n, sub) {
+    return { kind: 'node', key: n.key, html: '<span class="ic">' + (sub ? '↳' : (n.cover ? '<img class="mimg" src="' + esc(n.cover) + '" alt="" data-ph="' + n.ph + '">' : '<span class="mimg">' + n.ph + '</span>')) + '</span>' +
+      '<span class="t"><b>' + esc(n.title) + '</b> <span class="faint">' + esc(n.year || '') + '</span><small>' + esc(sub || ((n.creator ? n.creator + ' · ' : '') + n.status + (n.rating !== null && n.rating !== undefined ? ' · ' + n.rating + '/10' : ''))) + '</small></span>' +
+      '<span class="kchip k-' + n.kind + '">' + (n.kind === 'film' ? 'Film' : n.kind === 'tv' ? 'TV' : n.kind === 'game' ? 'Game' : n.comic ? 'Comic' : 'Book') + '</span>', sub: !!sub };
+  }
+
+  /** Grouped results for a query: [[group label, rows]]. */
+  function results(q) {
+    var M = api.model(), nq = HQ.normalise(q), groups = [];
+    var secs = allSections();
+    if (!nq) {
+      groups.push(['Jump to', SHORTCUTS.map(function (id) { return secs.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean).map(secRow)]);
+      return groups;
+    }
+    var hits = window.Web ? Web.search(q, 10) : [];
+    var rows = [];
+    hits.forEach(function (n, i) {
+      rows.push(nodeRow(n));
+      // The first few matches bring their Adaptation Web relatives along.
+      if (i < 4 && window.Web) {
+        Web.linksOf(n.key).slice(0, 4).forEach(function (l) {
+          var o = Web.info(Web.other(l, n.key));
+          if (o) rows.push(nodeRow(o, 'Linked: ' + n.title + ' ' + Web.phrase(l, n.key).toLowerCase() + ' this'));
+        });
+      }
+    });
+    if (rows.length) groups.push(['Records', rows]);
+    var colls = M.collList.filter(function (c) { return HQ.normalise(c.name + ' ' + c.family).indexOf(nq) >= 0; }).slice(0, 5).map(function (c) {
+      return { kind: 'coll', id: c.collection_id, html: '<span class="ic">' + esc(c.icon || '📚') + '</span><span class="t"><b>' + esc(c.name) + '</b><small>' + esc(c.family) + ' collection · ' +
+        ((M.entriesByColl[c.collection_id] || []).length) + ' films</small></span>' };
+    });
+    var lists = (((M.raw.media || {}).lists) || []).filter(function (l) { return HQ.normalise(l.name).indexOf(nq) >= 0; }).slice(0, 5).map(function (l) {
+      return { kind: 'list', id: l.list_id, html: '<span class="ic">' + esc(l.icon || '🔖') + '</span><span class="t"><b>' + esc(l.name) + '</b><small>' +
+        ({ book: 'Reading list', tv: 'Binge list', game: 'Game list' }[l.kind] || 'List') + '</small></span>' };
+    });
+    if (colls.length || lists.length) groups.push(['Collections & lists', colls.concat(lists)]);
+    var webs = window.Web ? Web.webs().filter(function (w) {
+      return w.keys.some(function (k) { var n = Web.info(k); return n && HQ.normalise(n.title).indexOf(nq) >= 0; });
+    }).slice(0, 3).map(function (w) {
+      return { kind: 'web', key: hits.length && w.keys.indexOf(hits[0].key) >= 0 ? hits[0].key : w.root.key, html: '<span class="ic">🕸️</span><span class="t"><b>' + esc(w.root.title) + ' web</b><small>' +
+        w.keys.length + ' linked records in the Adaptation Web</small></span>' };
+    }) : [];
+    if (webs.length) groups.push(['Adaptation Web', webs]);
+    var sec = secs.filter(function (s) { return HQ.normalise(s.label + ' ' + s.realm).indexOf(nq) >= 0; }).slice(0, 6).map(secRow);
+    if (sec.length) groups.push(['Go to', sec]);
+    return groups;
+  }
+  function secRow(s) {
+    return { kind: 'go', id: s.id, html: '<span class="ic">' + s.icon + '</span><span class="t"><b>' + esc(s.label) + '</b><small>' + esc(s.realm) + '</small></span><kbd>↵</kbd>' };
+  }
+
+  function draw() {
+    var list = document.getElementById('cmdklist');
+    if (!list) return;
+    var groups = results(st.q);
+    st.rows = [];
+    var html = groups.map(function (g) {
+      return '<div class="grp">' + esc(g[0]) + '</div>' + g[1].map(function (r) {
+        var i = st.rows.push(r) - 1;
+        return '<div class="it' + (r.sub ? ' sub' : '') + '" data-cmdk="' + i + '">' + r.html + '</div>';
+      }).join('');
+    }).join('');
+    st.idx = Math.min(st.idx, Math.max(0, st.rows.length - 1));
+    list.innerHTML = html || '<div class="none">Nothing in the crypt by that name.</div>';
+    mark();
+  }
+  function mark() {
+    var els = document.querySelectorAll('#cmdklist .it');
+    Array.prototype.forEach.call(els, function (el, i) { el.classList.toggle('on', i === st.idx); });
+    if (els[st.idx]) els[st.idx].scrollIntoView({ block: 'nearest' });
+  }
+
+  function open() {
+    if (!api.model()) return;
+    st.open = true; st.q = ''; st.idx = 0;
+    var el = document.createElement('div');
+    el.className = 'cmdk-scrim';
+    el.id = 'cmdk';
+    el.innerHTML = '<div class="cmdk"><div class="bar"><span>🔍</span><input id="cmdkq" placeholder="Search films, books, shows, games, lists and sections…" autocomplete="off"><kbd>esc</kbd></div>' +
+      '<div class="list" id="cmdklist"></div><div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>⌘K</kbd> toggle</span></div></div>';
+    document.body.appendChild(el);
+    el.addEventListener('mousedown', function (ev) { if (ev.target === el) close(); });
+    var inp = document.getElementById('cmdkq');
+    inp.addEventListener('input', function () { st.q = inp.value; st.idx = 0; draw(); });
+    draw();
+    inp.focus();
+  }
+  function close() {
+    st.open = false;
+    var el = document.getElementById('cmdk');
+    if (el) el.remove();
+  }
+
+  function run(r) {
+    if (!r) return;
+    close();
+    if (r.kind === 'node') Web.openNode(r.key);
+    else if (r.kind === 'go') api.go(r.id);
+    else if (r.kind === 'coll' && window.Collections) Collections.open(r.id);
+    else if (r.kind === 'list' && window.Media) Media.openList(r.id);
+    else if (r.kind === 'web') Web.focus(r.key);
+  }
+
+  // Capture phase, so the palette sees keys before the rest of the app does.
+  document.addEventListener('keydown', function (ev) {
+    if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && String(ev.key).toLowerCase() === 'k') {
+      ev.preventDefault(); ev.stopPropagation();
+      if (st.open) close(); else open();
+      return;
+    }
+    if (!st.open) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); return; }
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault(); ev.stopPropagation();
+      if (!st.rows.length) return;
+      st.idx = (st.idx + (ev.key === 'ArrowDown' ? 1 : -1) + st.rows.length) % st.rows.length;
+      mark();
+      return;
+    }
+    if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); run(st.rows[st.idx]); }
+  }, true);
+
+  function onClick(ev, a) {
+    api = a;
+    var t = ev.target.closest('[data-cmdk],[data-cmdkopen]');
+    if (!t) return false;
+    if (t.dataset.cmdkopen !== undefined) { open(); return true; }
+    run(st.rows[Number(t.dataset.cmdk)]);
+    return true;
+  }
+
+  return { onClick: onClick, open: open, close: close };
+})();
+</script>

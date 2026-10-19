@@ -1,0 +1,552 @@
+<style>
+  /* ---------------------------------------------------------------- Adaptation Web */
+  .web-hero { position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 18px; padding: 26px 30px; margin-bottom: 18px;
+    background: radial-gradient(600px 260px at 90% 0%, #e3242b33, transparent 70%), linear-gradient(160deg, #1d0709, #0b0304); }
+  .web-hero h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 58px; letter-spacing: 2px; line-height: 1; color: #fff; text-shadow: 0 0 26px #e3242b99; }
+  .web-hero h1 span { color: var(--blood2); }
+  .web-hero .sub { font-family: var(--type); color: var(--muted); margin-top: 6px; max-width: 640px; }
+  .web-hero svg.threads { position: absolute; right: -10px; top: -10px; width: 330px; height: 200px; opacity: .45; pointer-events: none; }
+  .web-cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+  @media (max-width: 1100px) { .web-cols { grid-template-columns: 1fr; } }
+  .web-tree { position: relative; padding: 18px 10px 26px; min-height: 260px; }
+  .web-tree svg.wl { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 0; }
+  .web-tree svg.wl path { fill: none; stroke-width: 2; opacity: .85; }
+  .web-tree svg.wl text { font-size: 10.5px; font-family: var(--type); paint-order: stroke; stroke: #0b0304; stroke-width: 4px; }
+  .web-gen { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: center; gap: 26px 22px; margin: 0 0 48px; }
+  .web-gen:last-child { margin-bottom: 0; }
+  .wcard { width: 128px; cursor: pointer; text-align: center; position: relative; transition: transform .15s; }
+  .wcard:hover { transform: translateY(-3px); }
+  .wcard .pic { width: 128px; height: 192px; border-radius: 10px; overflow: hidden; position: relative; box-shadow: 0 8px 22px #000d, 0 0 0 1px #ffffff12;
+    background: linear-gradient(160deg, #3a0c10, #12060a); display: grid; place-items: center; font-size: 34px; }
+  .wcard .pic img, .wcard .pic .mimg { width: 100%; height: 100%; object-fit: cover; border-radius: 0; font-size: 34px; }
+  .wcard.focus { width: 156px; }
+  .wcard.focus .pic { width: 156px; height: 234px; box-shadow: 0 14px 40px #000, 0 0 0 2px var(--blood2), 0 0 36px #e3242b88; }
+  .wcard .ttl { font-size: 13px; font-weight: 700; margin-top: 7px; line-height: 1.25; }
+  .wcard .meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; align-items: center; }
+  .wcard .rt { position: absolute; top: 7px; right: 7px; background: var(--blood); color: #fff; font-weight: 800; font-size: 12px; border-radius: 999px; padding: 1px 8px; box-shadow: 0 0 10px #000; }
+  .wcard .wst { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; padding: 4px 0;
+    background: linear-gradient(0deg, #000d, transparent); color: var(--muted); }
+  .wcard .wst.done { color: var(--ok); } .wcard .wst.active { color: var(--warn); }
+  .web-gen.dense { gap: 26px 14px; } .web-gen.dense .wcard { width: 104px; } .web-gen.dense .wcard .pic { width: 104px; height: 156px; }
+  .web-gen.dense2 { gap: 22px 10px; } .web-gen.dense2 .wcard { width: 84px; } .web-gen.dense2 .wcard .pic { width: 84px; height: 126px; font-size: 24px; }
+  .web-gen.dense2 .wcard .ttl { font-size: 11.5px; }
+  .wcard.un .pic img { filter: grayscale(.6) brightness(.75); }
+  .web-side .row { gap: 8px; }
+  .web-side .row .t { min-width: 0; }
+  .web-side .rel { font-family: var(--type); font-size: 11px; color: var(--faint); display: block; }
+  .web-list button.wweb { display: flex; width: 100%; gap: 10px; align-items: center; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--text); padding: 8px 4px; cursor: pointer; font: inherit; }
+  .web-list button.wweb:hover, .web-list button.wweb.on { background: #2a0a0d; }
+  .web-list .n { margin-left: auto; font-family: var(--type); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .wres { margin-top: 6px; }
+  .wres > div { display: flex; gap: 10px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .wres > div:hover { background: #2a0a0d; }
+  .wsug-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+  .wsug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; margin-top: 12px; }
+  .wsug { position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: linear-gradient(180deg, #1a0709, #0e0405); display: flex; flex-direction: column; gap: 6px; }
+  .wsug .pic { aspect-ratio: 2/3; border-radius: 8px; overflow: hidden; background: linear-gradient(160deg, #3a0c10, #12060a); display: grid; place-items: center; font-size: 34px; }
+  .wsug .pic img, .wsug .pic .mimg { width: 100%; height: 100%; object-fit: cover; border-radius: 0; font-size: 34px; }
+  .wsug .cap { font-family: var(--type); font-size: 11px; color: var(--warn); }
+  .wsug .ttl { font-weight: 700; font-size: 13px; line-height: 1.25; }
+  .wsug .acts { display: flex; gap: 6px; margin-top: auto; }
+  .wsug .acts .btn { flex: 1; padding: 5px 6px; font-size: 12px; justify-content: center; }
+  .wsug.adding { grid-column: span 2; flex-direction: row; gap: 12px; }
+  .wsug.adding .pic { width: 120px; flex: none; }
+  .wsug .form { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+  .wsug .form select, .wsug .form input { width: 100%; }
+  .wsec { font-family: var(--type); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--faint); margin: 18px 0 0; }
+  .wpanel .row { gap: 8px; }
+  .wpanel .rel { font-family: var(--type); font-size: 11px; color: var(--faint); margin-right: 4px; }
+  .wpanel .links { margin-bottom: 8px; }
+</style>
+<script>
+/*
+ * The Adaptation Web: your films, books, comics, shows and games linked as one family tree.
+ * Links live in WebLinks (from = source / earlier, to = adaptation / later). The tree puts sources above,
+ * whatever came from them below and shared-universe relatives beside. Wikidata suggests the links you
+ * haven't made yet; Add brings a suggestion into the right section and links it, ✕ forgets it for this record.
+ */
+var Web = (function () {
+  var REL = {
+    adaptation: ['Adapted from', 'Adapted into', '#e3242b'], sequel: ['Sequel to', 'Followed by', '#f0b54a'],
+    remake: ['Remake of', 'Remade as', '#c86bff'], spinoff: ['Spin-off of', 'Spun off into', '#4fd1c5'],
+    inspired: ['Inspired by', 'Inspired', '#ff9f43'], universe: ['Shares a universe with', 'Shares a universe with', '#6aa6ff'],
+    franchise: ['Same franchise as', 'Same franchise as', '#6aa6ff'], related: ['Related to', 'Related to', '#9a8a88']
+  };
+  var SYM = { universe: 1, franchise: 1, related: 1 };
+  // Seen from the record you're looking at: what the other one is to it.
+  var PICK = [
+    ['adaptation:up', 'is adapted from…'], ['adaptation:down', 'was adapted into…'], ['sequel:up', 'is a sequel to…'], ['sequel:down', 'is followed by…'],
+    ['remake:up', 'is a remake of…'], ['remake:down', 'was remade as…'], ['spinoff:up', 'spun off from…'], ['spinoff:down', 'spun off…'],
+    ['inspired:up', 'was inspired by…'], ['inspired:down', 'inspired…'], ['universe:side', 'shares a universe with…'],
+    ['franchise:side', 'is in the same franchise as…'], ['related:side', 'is related to…']
+  ];
+  var KICON = { film: '🎞️', book: '📖', tv: '📺', game: '🎮' };
+  var ws = { focus: null, sug: {}, adding: null, linkRel: 'adaptation:down', fix: null, editLink: null };
+  var api = App.api;
+
+  function esc(s) { return api.esc(s); }
+  function M_() { return api.model(); }
+  function raw() { var M = M_(); M.raw.web = M.raw.web || { links: [], nodes: [], dismissed: [] }; return M.raw.web; }
+  function cfgKinds() { return (M_().raw.media || {}).kinds || {}; }
+
+  // ------------------------------------------------------------------ records
+  function mediaItem(id) {
+    var items = (M_().raw.media || {}).items || [];
+    for (var i = 0; i < items.length; i++) if (items[i].item_id === id) return items[i];
+    return null;
+  }
+  /** Everything the Web shows about one record, or null if it's gone. */
+  function info(key) {
+    var p = String(key || '').split(':'), M = M_();
+    if (p[0] === 'film') {
+      var f = M.byId[p[1]];
+      if (!f) return null;
+      return { key: key, kind: 'film', title: f.title, year: f.year, cover: f.poster || '', status: f.status, rating: f.rating,
+        phase: f.status === 'Watched' ? 'done' : f.status === 'DNF' ? 'dropped' : 'want', ph: '⚰️' };
+    }
+    var i = mediaItem(p[1]);
+    if (!i) return null;
+    var c = cfgKinds()[i.kind] || { active: [], done: [], dropped: [] };
+    var phase = c.active.indexOf(i.status) >= 0 ? 'active' : c.done.indexOf(i.status) >= 0 ? 'done' : c.dropped.indexOf(i.status) >= 0 ? 'dropped' : 'want';
+    return { key: key, kind: i.kind, title: i.title, year: i.year, cover: i.cover_url ? HQ.posterUrl(i.cover_url) : '', status: i.status, rating: i.rating_10,
+      phase: phase, ph: KICON[i.kind], creator: i.creator, comic: /Comic|Graphic|Manga/.test(i.format) };
+  }
+  function kindName(n) { return n.kind === 'film' ? 'Film' : n.kind === 'book' ? (n.comic ? 'Comic' : 'Book') : n.kind === 'tv' ? 'TV' : 'Game'; }
+  function img(src, ph) {
+    return src ? '<img class="mimg" loading="lazy" src="' + esc(src) + '" alt="" data-ph="' + ph + '">' : '<span class="mimg">' + ph + '</span>';
+  }
+
+  /** Every record in the app, for "start from" and "link something" searches. */
+  function search(q, n, skip) {
+    var nq = HQ.normalise(q);
+    if (!nq) return [];
+    var M = M_(), out = [];
+    M.films.forEach(function (f) { if (f.search.indexOf(nq) >= 0) out.push('film:' + f.id); });
+    ((M.raw.media || {}).items || []).forEach(function (i) { if (HQ.normalise(i.title + ' ' + i.creator).indexOf(nq) >= 0) out.push('item:' + i.item_id); });
+    return out.filter(function (k) { return !skip || !skip[k]; }).map(info).filter(Boolean).sort(function (a, b) {
+      return (HQ.normalise(b.title).indexOf(nq) === 0) - (HQ.normalise(a.title).indexOf(nq) === 0) || a.title.localeCompare(b.title);
+    }).slice(0, n);
+  }
+
+  // ------------------------------------------------------------------ graph
+  function linksOf(key) { return raw().links.filter(function (l) { return l.from_key === key || l.to_key === key; }); }
+  function other(l, key) { return l.from_key === key ? l.to_key : l.from_key; }
+  /** How the other record relates to `key`, in words: "Adapted from", "Followed by"… */
+  function phrase(l, key) {
+    var r = REL[l.relation] || REL.related;
+    return SYM[l.relation] ? r[0] : l.to_key === key ? r[0] : r[1];
+  }
+
+  /** Connected groups of linked records, biggest first. */
+  function webs() {
+    var parent = {};
+    var find = function (k) { while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k]; } return k; };
+    raw().links.forEach(function (l) {
+      [l.from_key, l.to_key].forEach(function (k) { if (!parent[k]) parent[k] = k; });
+      var a = find(l.from_key), b = find(l.to_key);
+      if (a !== b) parent[a] = b;
+    });
+    var groups = {};
+    Object.keys(parent).forEach(function (k) { if (info(k)) (groups[find(k)] = groups[find(k)] || []).push(k); });
+    return Object.keys(groups).map(function (g) {
+      var keys = groups[g];
+      var nodes = keys.map(info);
+      // Named after its oldest record: usually the source everything grew from.
+      var root = nodes.slice().sort(function (a, b) { return (a.year || 9999) - (b.year || 9999); })[0];
+      return { keys: keys, root: root, kinds: nodes.reduce(function (o, n) { o[n.kind] = 1; return o; }, {}) };
+    }).sort(function (a, b) { return b.keys.length - a.keys.length || a.root.title.localeCompare(b.root.title); });
+  }
+
+  /** Generations around the focus: sources above (negative), what came from it below, relatives beside. */
+  function generations(focus) {
+    var gen = {}, queue = [focus];
+    gen[focus] = 0;
+    while (queue.length) {
+      var k = queue.shift();
+      linksOf(k).forEach(function (l) {
+        var o = other(l, k);
+        if (gen[o] !== undefined || !info(o)) return;
+        gen[o] = SYM[l.relation] ? gen[k] : l.from_key === k ? gen[k] + 1 : gen[k] - 1;
+        queue.push(o);
+      });
+    }
+    return gen;
+  }
+
+  // ------------------------------------------------------------------ the page
+  function card(n, focus) {
+    var r = n.rating !== null && n.rating !== undefined;
+    return '<div class="wcard' + (focus ? ' focus' : '') + (n.phase === 'done' ? '' : ' un') + '" data-wfocus="' + esc(n.key) + '" id="wn-' + esc(n.key.replace(':', '-')) + '" title="' + esc(n.title + (focus ? ' · click to open' : ' · click to centre the web here')) + '">' +
+      '<div class="pic">' + img(n.cover, n.ph) + (r ? '<span class="rt">' + n.rating + '</span>' : '') + '<span class="wst ' + n.phase + '">' + esc(n.status) + '</span></div>' +
+      '<div class="ttl">' + esc(n.title) + '</div><div class="meta"><span class="kchip k-' + n.kind + '">' + kindName(n) + '</span>' + (n.year ? '<span>' + esc(n.year) + '</span>' : '') + '</div></div>';
+  }
+
+  function hero(sub) {
+    return '<div class="web-hero"><svg class="threads" viewBox="0 0 330 200"><g stroke="#e3242b" fill="none" stroke-width="1">' +
+      '<path d="M330 0 L170 120"/><path d="M330 0 L230 200"/><path d="M330 0 L120 40"/><path d="M330 0 L300 200"/>' +
+      '<path d="M140 55 Q190 70 205 105 Q240 120 245 160"/><path d="M180 30 Q220 60 230 85 Q270 100 280 140"/><path d="M230 15 Q255 40 262 62 Q290 75 300 105"/></g>' +
+      '<circle cx="232" cy="98" r="5" fill="#e3242b"/></svg>' +
+      '<h1>The Adaptation <span>Web</span> 🕸️</h1><div class="sub">' + sub + '</div></div>';
+  }
+
+  function startBox(ph) {
+    return '<input class="input" id="wstart" placeholder="' + esc(ph) + '" autocomplete="off" style="width:100%"><div class="wres" id="wstartres"></div>';
+  }
+
+  function webList() {
+    var all = webs();
+    var mine = ws.focus ? all.filter(function (w) { return w.keys.indexOf(ws.focus) >= 0; })[0] : null;
+    return '<div class="panel web-list"><h2>🕸️ Your webs</h2>' + (all.length ? all.map(function (w) {
+      return '<button class="wweb' + (w === mine ? ' on' : '') + '" data-wfocus="' + esc(w.root.key) + '">' + img(w.root.cover, w.root.ph).replace('class="mimg"', 'class="mimg mthumb"') +
+        '<span><b>' + esc(w.root.title) + '</b><br><span class="small faint">' + Object.keys(w.kinds).map(function (k) { return KICON[k]; }).join(' ') + '</span></span>' +
+        '<span class="n">' + w.keys.length + ' linked</span></button>';
+    }).join('') : '<div class="small muted">No webs yet. Open any record and link it to its source, sequels or spin-offs, or let Wikidata suggest them.</div>') + '</div>';
+  }
+
+  function renderEmpty() {
+    return hero('Link books, comics, films, shows and games into family trees: the novel, its adaptations, their sequels and the games they spawned, with your ratings and statuses on every card.') +
+      '<div class="web-cols"><div class="panel"><h2>Start a web</h2><div class="muted small" style="margin-bottom:10px">Pick any record. Wikidata will suggest what it came from and what came from it.</div>' +
+        startBox('Search your films, books, shows and games…') + '</div>' + webList() + '</div>';
+  }
+
+  function renderTree(focus) {
+    var gen = generations(focus);
+    var rows = {};
+    Object.keys(gen).forEach(function (k) { (rows[gen[k]] = rows[gen[k]] || []).push(k); });
+    var levels = Object.keys(rows).map(Number).sort(function (a, b) { return a - b; });
+    var html = levels.map(function (g) {
+      var nodes = rows[g].map(info).sort(function (a, b) { return (a.key === focus) - (b.key === focus) || (a.year || 9999) - (b.year || 9999); });
+      if (g === 0) { // keep the focus in the middle of its row
+        var f = nodes.pop(); nodes.splice(Math.floor(nodes.length / 2), 0, f);
+      }
+      var others = nodes.length - (g === 0 ? 1 : 0);
+      return '<div class="web-gen' + (others > 7 ? ' dense2' : others > 5 ? ' dense' : '') + '">' + nodes.map(function (n) { return card(n, n.key === focus); }).join('') + '</div>';
+    }).join('');
+    setTimeout(drawLines, 0);
+    return '<div class="panel web-tree" id="wtree"><svg class="wl" id="wlines"></svg>' + html + '</div>';
+  }
+
+  /** Threads between the cards, drawn once the cards have a place on screen. */
+  function drawLines() {
+    var box = document.getElementById('wtree'), svg = document.getElementById('wlines');
+    if (!box || !svg || !ws.focus) return;
+    var b = box.getBoundingClientRect();
+    svg.setAttribute('width', box.scrollWidth);
+    svg.setAttribute('height', box.scrollHeight);
+    var gen = generations(ws.focus), seen = {}, out = '', marks = {};
+    Object.keys(gen).forEach(function (k) {
+      linksOf(k).forEach(function (l) {
+        if (seen[l.link_id] || gen[l.from_key] === undefined || gen[l.to_key] === undefined) return;
+        seen[l.link_id] = 1;
+        var A = document.getElementById('wn-' + l.from_key.replace(':', '-')), B = document.getElementById('wn-' + l.to_key.replace(':', '-'));
+        if (!A || !B) return;
+        // Leave from under the whole card (title included), arrive on the poster.
+        var pa = A.querySelector('.pic').getBoundingClientRect(), pb = B.querySelector('.pic').getBoundingClientRect();
+        var ca = A.getBoundingClientRect(), cb = B.getBoundingClientRect();
+        var ra = { left: pa.left, width: pa.width, top: pa.top, bottom: ca.bottom + 4 }, rb = { left: pb.left, width: pb.width, top: pb.top, bottom: cb.bottom + 4 };
+        var col = (REL[l.relation] || REL.related)[2];
+        marks[col] = 1;
+        var ax = ra.left + ra.width / 2 - b.left, bx = rb.left + rb.width / 2 - b.left, d, mx, my;
+        if (Math.abs(ra.top - rb.top) < 4) { // same row: an arc over the top
+          var ay = ra.top - b.top, top = ay - 28 - Math.min(60, Math.abs(bx - ax) / 6);
+          d = 'M' + ax + ',' + ay + ' C' + ax + ',' + top + ' ' + bx + ',' + top + ' ' + bx + ',' + ay;
+          mx = (ax + bx) / 2; my = top + 12;
+        } else {
+          var up = ra.top < rb.top ? [ax, ra.bottom - b.top, bx, rb.top - b.top] : [ax, ra.top - b.top, bx, rb.bottom - b.top];
+          var midY = (up[1] + up[3]) / 2;
+          d = 'M' + up[0] + ',' + up[1] + ' C' + up[0] + ',' + midY + ' ' + up[2] + ',' + midY + ' ' + up[2] + ',' + up[3];
+          // Label next to the lower card's end, so sibling links don't pile their words on top of each other.
+          var low = up[1] > up[3] ? [up[0], up[1]] : [up[2], up[3]];
+          mx = low[0]; my = low[1] - (up[1] > up[3] ? -14 : 9);
+        }
+        var word = SYM[l.relation] ? REL[l.relation][0].toLowerCase() : (REL[l.relation] || REL.related)[1].toLowerCase();
+        out += '<path d="' + d + '" stroke="' + col + '"' + (SYM[l.relation] ? ' stroke-dasharray="5 4"' : ' marker-end="url(#wa' + col.slice(1) + ')"') + '/>' +
+          '<text x="' + mx + '" y="' + my + '" fill="' + col + '" text-anchor="middle">' + esc(word) + '</text>';
+      });
+    });
+    svg.innerHTML = '<defs>' + Object.keys(marks).map(function (c) {
+      return '<marker id="wa' + c.slice(1) + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + c + '"/></marker>';
+    }).join('') + '</defs>' + out;
+  }
+  window.addEventListener('resize', function () { if (api.view() === 'web') drawLines(); });
+
+  function statusOptions(kind) {
+    var list = kind === 'film' ? ['Not watched', 'Watched', 'DNF'] : ((cfgKinds()[kind] || {}).statuses || []);
+    return list.map(function (s) { return [s, s]; });
+  }
+  function destOptions(kind) {
+    var M = M_();
+    if (kind === 'film') return M.collList.filter(function (c) { return c.active !== false; }).map(function (c) { return [c.collection_id, c.family + ' • ' + c.name]; });
+    return ((M.raw.media || {}).lists || []).filter(function (l) { return l.kind === kind; }).map(function (l) { return [l.list_id, (l.icon ? l.icon + ' ' : '') + l.name]; });
+  }
+
+  function sugCaption(s) {
+    var r = REL[s.relation] || REL.related;
+    return s.dir === 'up' ? '↑ ' + r[1] + ' this' : s.dir === 'down' ? '↓ ' + r[0] + ' this' : '↔ ' + r[0] + ' this';
+  }
+
+  function sugCard(s) {
+    var meta = '<div class="cap">' + esc(sugCaption(s)) + '</div><div class="ttl">' + esc(s.title) + '</div>' +
+      '<div class="small muted"><span class="kchip k-' + s.kind + '">' + (s.comic ? 'Comic' : s.kind === 'film' ? 'Film' : s.kind === 'tv' ? 'TV' : s.kind === 'game' ? 'Game' : 'Book') + '</span> ' +
+        esc([s.year, s.creator].filter(Boolean).join(' · ')) + '</div>';
+    if (ws.adding === s.key) {
+      var relSel = PICK.map(function (p) { return [p[0], p[1]]; });
+      return '<div class="wsug adding"><div class="pic">' + img(s.cover, KICON[s.kind]) + '</div><div class="form">' + meta +
+        '<label class="small muted">Add it as<select id="wa_status">' + api.options(statusOptions(s.kind), '', null) + '</select></label>' +
+        '<label class="small muted">Also put it on<select id="wa_dest">' + api.options(destOptions(s.kind), '', 'Nowhere else yet') + '</select></label>' +
+        '<label class="small muted">It…<select id="wa_rel">' + api.options(relSel, s.relation + ':' + (SYM[s.relation] ? 'side' : s.dir), null) + '</select></label>' +
+        (s.kind === 'film' && !s.year ? '<label class="small muted">Release year<input class="input" id="wa_year" type="number" placeholder="1931"></label>' : '') +
+        '<div class="acts"><button class="btn primary" data-wadopt="' + esc(s.key) + '">Add + link</button><button class="btn ghost" data-wadd="">Cancel</button></div></div></div>';
+    }
+    return '<div class="wsug"><div class="pic">' + img(s.cover, KICON[s.kind]) + '</div>' + meta + '<div class="acts">' +
+      (s.inApp ? '<button class="btn primary" data-wlinksug="' + esc(s.key) + '" title="You already have this: just link it">Link</button>'
+        : '<button class="btn primary" data-wadd="' + esc(s.key) + '">+ Add</button>') +
+      '<button class="btn ghost" data-wreject="' + esc(s.key) + '" title="Not related: don\'t suggest it here again">✕</button></div></div>';
+  }
+
+  function renderSuggestions(focus) {
+    var n = info(focus), S = ws.sug[focus];
+    var head = '<div class="wsug-head"><h2 style="margin:0">🔮 Wikidata thinks these belong here</h2><span class="grow"></span>';
+    if (!S || S.busy) return '<div class="panel">' + head + '</div><div class="empty">Reading the threads around ' + esc(n.title) + '…</div></div>';
+    if (S.err) return '<div class="panel">' + head + '</div><div class="empty">' + esc(S.err) + '<br><button class="btn" data-wsugload="1" style="margin-top:10px">Try again</button></div></div>';
+    var d = S.data;
+    var match = d.qid === 'none' ? '<span class="small muted">Couldn\'t find ' + esc(n.title) + ' on Wikidata.</span>'
+      : '<span class="small muted">Matched to <b>' + esc(d.label || d.qid) + '</b> <span class="faint">' + esc(d.qid) + '</span></span>';
+    head += match + '<button class="btn ghost small" data-wfix>' + (d.qid === 'none' ? 'Find it' : 'Wrong match?') + '</button><button class="btn ghost small" data-wsugload="1" title="Ask again">↻</button></div>';
+    var fix = ws.fix || (d.qid === 'none' ? { q: n.title } : null);
+    var fixer = fix ? '<div class="toolbar" style="margin-top:10px"><input class="input" id="wfix_q" value="' + esc(fix.q) + '" placeholder="Title, or a Wikidata id like Q12345" style="flex:1">' +
+        '<button class="btn" data-wfixsearch>Search Wikidata</button><button class="btn ghost" data-wfixset="none">It\'s not on there</button></div>' +
+      (fix.busy ? '<div class="empty">Searching…</div>' : fix.results ? '<div class="wres">' + (fix.results.length ? fix.results.map(function (r) {
+        return '<div data-wfixset="' + esc(r.qid) + '" data-label="' + esc(r.label) + '"><b>' + esc(r.label) + '</b><span class="small muted">' + esc(r.description) + '</span><span class="grow"></span><span class="faint small">' + esc(r.qid) + '</span></div>';
+      }).join('') : '<div class="muted small">Nothing by that name.</div>') + '</div>' : '') : '';
+    var groups = [['up', 'Where it came from'], ['down', 'What came from it'], ['side', 'Same world']];
+    var body = d.suggestions.length ? groups.map(function (g) {
+      var list = d.suggestions.filter(function (s) { return s.dir === g[0]; });
+      return list.length ? '<div class="wsec">' + g[1] + ' · ' + list.length + '</div><div class="wsug-grid">' + list.map(sugCard).join('') + '</div>' : '';
+    }).join('') : d.qid !== 'none' ? '<div class="empty">Wikidata has nothing more linked to this. Link things by hand on the right.</div>' : '';
+    return '<div class="panel">' + head + fixer + body + '</div>';
+  }
+
+  function renderSide(focus) {
+    var n = info(focus);
+    var links = linksOf(focus);
+    var pick = PICK.map(function (p) { return [p[0], esc(n.title) + ' ' + p[1]]; });
+    return '<div class="web-side"><div class="panel"><h2>' + esc(KICON[n.kind] + ' ' + n.title) + '</h2>' +
+        '<div class="toolbar"><button class="btn primary" data-wopen="' + esc(focus) + '">Open it</button><button class="btn" data-oseed="' + esc(focus) + '">🔮 More like this</button></div>' +
+        '<h3>' + links.length + ' link' + (links.length === 1 ? '' : 's') + '</h3>' +
+        (links.length ? links.map(function (l) {
+          var o = info(other(l, focus));
+          if (!o) return '';
+          if (ws.editLink === l.link_id) {
+            var cur = l.relation + ':' + (SYM[l.relation] ? 'side' : l.to_key === focus ? 'up' : 'down');
+            return '<div class="row" style="flex-wrap:wrap"><span class="t small">' + esc(n.title) + '</span><select id="wl_rel" style="flex:1;min-width:160px">' + api.options(PICK, cur, null) + '</select>' +
+              '<span class="small"><b>' + esc(o.title) + '</b></span><button class="btn small" data-wlsave="' + esc(l.link_id) + '">Save</button><button class="btn ghost small" data-wledit="">Cancel</button></div>';
+          }
+          return '<div class="row"><span class="t" data-wfocus="' + esc(o.key) + '" style="cursor:pointer"><span class="rel">' + esc(phrase(l, focus)) + '</span>' +
+            KICON[o.kind] + ' <b>' + esc(o.title) + '</b> <span class="faint small">' + esc(o.year || '') + '</span></span>' +
+            '<button class="btn ghost small" data-wledit="' + esc(l.link_id) + '" title="Change the kind of link">✎</button>' +
+            '<button class="btn ghost small" data-wunlink="' + esc(l.link_id) + '" title="Unlink">✕</button></div>';
+        }).join('') : '<div class="small muted">Nothing linked yet.</div>') +
+        '<h3>Link something</h3><select id="wlinkrel" style="width:100%;margin-bottom:6px">' + api.options(pick, ws.linkRel, null) + '</select>' +
+        '<input class="input" id="wlinkq" placeholder="Search your records to link…" autocomplete="off" style="width:100%"><div class="wres" id="wlinkres"></div>' +
+      '</div><div class="panel"><h2>Jump to another record</h2>' + startBox('Search your films, books, shows and games…') + '</div>' + webList() + '</div>';
+  }
+
+  function render(a) {
+    api = a;
+    if (ws.focus && !info(ws.focus)) ws.focus = null;
+    if (!ws.focus) return renderEmpty();
+    if (!ws.sug[ws.focus]) setTimeout(function () { loadSug(ws.focus); }, 0);
+    var n = info(ws.focus);
+    return hero('Following the threads from <b>' + esc(n.title) + '</b>' + (n.year ? ' (' + esc(n.year) + ')' : '') + '. Click any card to centre the web on it.') +
+      '<div class="web-cols"><div>' + renderTree(ws.focus) + renderSuggestions(ws.focus) + '</div>' + renderSide(ws.focus) + '</div>';
+  }
+
+  // ------------------------------------------------------------------ actions
+  function loadSug(key, refresh) {
+    ws.sug[key] = { busy: true };
+    if (api.view() === 'web') api.render();
+    api.call('apiWebSuggest', key, !!refresh).then(function (d) {
+      ws.sug[key] = { data: d };
+      if (d.qid !== 'none') ws.fix = null;
+      if (api.view() === 'web' && ws.focus === key) api.render();
+    }).catch(function (e) {
+      ws.sug[key] = { err: 'Wikidata isn\'t answering right now (' + (e && e.message ? e.message : e) + ').' };
+      if (api.view() === 'web' && ws.focus === key) api.render();
+    });
+  }
+
+  function focus(key) {
+    ws.focus = key; ws.adding = null; ws.fix = null; ws.editLink = null;
+    window.scrollTo(0, 0);
+    if (api.view() === 'web') api.render(); else api.go('web');
+  }
+
+  function openNode(key) {
+    var p = key.split(':');
+    api.closeDrawer();
+    if (window.Media && Media.closeDrawer) Media.closeDrawer();
+    if (p[0] === 'film') api.openFilm(p[1]); else if (window.Media) Media.open(p[1]);
+  }
+
+  function sugByKey(k) {
+    var S = ws.sug[ws.focus];
+    return S && S.data ? S.data.suggestions.filter(function (s) { return s.key === k; })[0] : null;
+  }
+  function dropSug(k) {
+    var S = ws.sug[ws.focus];
+    if (S && S.data) S.data.suggestions = S.data.suggestions.filter(function (s) { return s.key !== k; });
+  }
+  function refreshThen(msg) {
+    return api.refresh().then(function () { if (msg) api.toast(msg, 'ok'); });
+  }
+  function link(fromKey, toKey, relDir) {
+    var p = relDir.split(':');
+    var from = p[1] === 'up' ? toKey : fromKey, to = p[1] === 'up' ? fromKey : toKey;
+    return api.call('apiWebLink', from, to, p[0], '', 'manual');
+  }
+
+  function renderResults(boxId, q, attr, skip) {
+    var box = document.getElementById(boxId);
+    if (!box) return;
+    var hits = search(q, 8, skip);
+    box.innerHTML = q.trim() ? (hits.length ? hits.map(function (n) {
+      return '<div ' + attr + '="' + esc(n.key) + '">' + img(n.cover, n.ph).replace('class="mimg"', 'class="mimg mthumb"') + '<span class="t"><b>' + esc(n.title) + '</b> <span class="faint small">' + esc(n.year || '') + '</span></span>' +
+        '<span class="grow"></span><span class="kchip k-' + n.kind + '">' + kindName(n) + '</span></div>';
+    }).join('') : '<div class="muted small" style="cursor:default">Nothing matches. Add it to its realm first.</div>') : '';
+  }
+
+  function onClick(ev, a) {
+    api = a;
+    var t = ev.target.closest('[data-wfocus],[data-wgo],[data-wopen],[data-wpick],[data-wlinkpick],[data-wunlink],[data-wledit],[data-wlsave],[data-wadd],[data-wadopt],' +
+      '[data-wreject],[data-wlinksug],[data-wsugload],[data-wfix],[data-wfixsearch],[data-wfixset]');
+    if (!t) return false;
+    var d = t.dataset;
+    if (d.wgo) { api.closeDrawer(); if (window.Media && Media.closeDrawer) Media.closeDrawer(); focus(d.wgo); return true; }
+    if (d.wpick) { focus(d.wpick); return true; }
+    if (d.wopen) { openNode(d.wopen); return true; }
+    if (d.wfocus) {
+      if (t.closest('.wpanel')) { openNode(d.wfocus); return true; } // links inside a drawer open the record
+      if (d.wfocus === ws.focus && t.classList.contains('wcard')) { openNode(d.wfocus); return true; }
+      focus(d.wfocus);
+      return true;
+    }
+    if (d.wlinkpick) {
+      var rel = document.getElementById('wlinkrel').value;
+      ws.linkRel = rel;
+      link(ws.focus, d.wlinkpick, rel).then(function () { return refreshThen('Linked'); }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.wunlink) {
+      api.call('apiWebUnlink', d.wunlink).then(function () { return refreshThen('Unlinked'); }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.wledit !== undefined) { ws.editLink = d.wledit || null; api.render(); return true; }
+    if (d.wlsave) {
+      var l = raw().links.filter(function (x) { return x.link_id === d.wlsave; })[0];
+      var v = document.getElementById('wl_rel').value.split(':');
+      // The record you're on is "to" when the other one is its source (up).
+      var wantTo = v[1] === 'up' ? ws.focus : other(l, ws.focus);
+      var flip = !SYM[v[0]] && l.to_key !== wantTo;
+      api.call('apiWebEditLink', d.wlsave, v[0], flip).then(function () { ws.editLink = null; return refreshThen('Link changed'); }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.wadd !== undefined) { ws.adding = d.wadd || null; api.render(); return true; }
+    if (d.wadopt) {
+      var s = sugByKey(d.wadopt);
+      if (!s) return true;
+      var relv = document.getElementById('wa_rel').value.split(':');
+      var yr = document.getElementById('wa_year');
+      var sug = Object.assign({}, s);
+      if (yr) { sug.year = Number(yr.value); if (!sug.year) { api.toast('Films need a release year.', 'bad'); return true; } }
+      t.disabled = true;
+      t.textContent = 'Adding…';
+      api.call('apiAdopt', sug, { status: document.getElementById('wa_status').value, dest: document.getElementById('wa_dest').value,
+        link: { from: ws.focus, relation: relv[0], dir: relv[1] } }).then(function (res) {
+        ws.adding = null;
+        dropSug(s.key);
+        return refreshThen((res.created ? 'Added ' : 'Linked ') + s.title);
+      }).catch(function (e) { t.disabled = false; t.textContent = 'Add + link'; api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.wlinksug) {
+      var s2 = sugByKey(d.wlinksug);
+      if (!s2) return true;
+      link(ws.focus, s2.inApp, s2.relation + ':' + (SYM[s2.relation] ? 'side' : s2.dir)).then(function () {
+        dropSug(s2.key);
+        return refreshThen('Linked ' + s2.title);
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.wreject) {
+      var s3 = sugByKey(d.wreject);
+      dropSug(d.wreject);
+      api.render();
+      api.call('apiDismiss', d.wreject, s3 ? s3.title : '', ws.focus).then(function () {
+        raw().dismissed.push(d.wreject);
+        api.toast('Won\'t suggest ' + (s3 ? s3.title : 'that') + ' here again', 'ok', { label: 'Undo', fn: function () {
+          api.call('apiUndismiss', d.wreject).then(function () { loadSug(ws.focus); });
+        } });
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.wsugload) { loadSug(ws.focus, true); return true; }
+    if (d.wfix !== undefined) { ws.fix = ws.fix ? null : { q: info(ws.focus).title }; api.render(); return true; }
+    if (d.wfixsearch !== undefined) { fixSearch(); return true; }
+    if (d.wfixset) {
+      api.call('apiWebSetQid', ws.focus, d.wfixset, d.label || '').then(function () { ws.fix = null; loadSug(ws.focus); })
+        .catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    return false;
+  }
+
+  function fixSearch() {
+    var q = document.getElementById('wfix_q').value;
+    ws.fix = { q: q, busy: true };
+    api.render();
+    api.call('apiWebFindQid', q).then(function (r) { ws.fix = { q: q, results: r }; api.render(); })
+      .catch(function (e) { ws.fix = { q: q, results: [] }; api.render(); api.toast(e.message, 'bad'); });
+  }
+
+  function onInput(ev, a) {
+    api = a;
+    var id = ev.target.id;
+    if (id === 'wstart') { renderResults('wstartres', ev.target.value, 'data-wpick'); return true; }
+    if (id === 'wlinkq') {
+      var skip = {};
+      skip[ws.focus] = 1;
+      linksOf(ws.focus).forEach(function (l) { skip[other(l, ws.focus)] = 1; });
+      renderResults('wlinkres', ev.target.value, 'data-wlinkpick', skip);
+      return true;
+    }
+    return false;
+  }
+  function onChange(ev) {
+    if (ev.target.id === 'wlinkrel') { ws.linkRel = ev.target.value; return true; }
+    return false;
+  }
+  function onKey(ev) {
+    if (ev.key === 'Enter' && ev.target.id === 'wfix_q') { fixSearch(); return true; }
+    return false;
+  }
+
+  /** The Web section inside a film or media drawer. */
+  function panel(key) {
+    var links = linksOf(key);
+    return '<div class="wpanel"><h3>🕸️ Adaptation Web</h3>' +
+      (links.length ? '<div class="links">' + links.map(function (l) {
+        var o = info(other(l, key));
+        return o ? '<div class="row"><span class="t" data-wfocus="' + esc(o.key) + '" style="cursor:pointer"><span class="rel">' + esc(phrase(l, key)) + '</span>' +
+          KICON[o.kind] + ' <b>' + esc(o.title) + '</b> <span class="faint small">' + esc(o.year || '') + '</span></span>' + statusTag(o) + '</div>' : '';
+      }).join('') + '</div>' : '<div class="small muted" style="margin-bottom:8px">Not linked to anything yet.</div>') +
+      '<div class="toolbar"><button class="btn" data-wgo="' + esc(key) + '">' + (links.length ? 'Open the web' : 'Find its source, sequels and spin-offs') + '</button>' +
+      '<button class="btn ghost" data-oseed="' + esc(key) + '">🔮 More like this</button></div></div>';
+  }
+  function statusTag(n) { return '<span class="mstatus ' + n.phase + '">' + esc(n.status) + '</span>'; }
+
+  App.view('web', { render: render });
+  return { panel: panel, onClick: onClick, onInput: onInput, onChange: onChange, onKey: onKey, focus: focus, openNode: openNode,
+    info: info, linksOf: linksOf, other: other, phrase: phrase, webs: webs, search: search, REL: REL };
+})();
+</script>

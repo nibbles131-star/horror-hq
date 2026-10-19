@@ -515,5 +515,6 @@ if (typeof module !== 'undefined') module.exports = StatsLogic;
   }
 
   App.view('stats', { render: render, onClick: onClick, onInput: onInput, onChange: onChange });
+  if (typeof window !== 'undefined') window.Stats = { tab: function (t) { st.tab = t; st.pfilter = null; } };
 })();
 </script>
