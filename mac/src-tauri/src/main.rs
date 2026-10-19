@@ -1,6 +1,7 @@
 // Horror HQ for Mac. The screens and their logic are the Apps Script app's own files,
 // bundled by build_web.js; this side reads and writes the data file in Documents, keeps
-// daily backups of it, and serves posters from a cache on disk (poster://localhost/w342/abc.jpg).
+// daily backups of it, serves posters from a cache on disk (poster://localhost/w342/abc.jpg),
+// and does the few things a web page can't: saving downloads, spreadsheet export, Finder and links.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::fs;
@@ -49,6 +50,148 @@ fn save_data(app: tauri::AppHandle, json: String, day: String) -> Result<String,
     fs::write(&tmp, json).map_err(|e| format!("Couldn't write {}: {}", tmp.display(), e))?;
     fs::rename(&tmp, &path).map_err(|e| format!("Couldn't save {}: {}", path.display(), e))?;
     Ok(path.display().to_string())
+}
+
+/// Where the data file lives, for "Show in Finder".
+#[tauri::command]
+fn data_path(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(data_dir(&app)?.join(FILE).display().to_string())
+}
+
+/// Admin > Back up now: a dated snapshot in Backups that the daily rotation never deletes.
+#[tauri::command]
+fn backup_now(app: tauri::AppHandle, json: String, stamp: String) -> Result<String, String> {
+    let backups = data_dir(&app)?.join("Backups");
+    fs::create_dir_all(&backups).map_err(|e| format!("Couldn't create {}: {}", backups.display(), e))?;
+    let path = backups.join(format!("Horror HQ Snapshot {}.json", clean_name(&stamp)));
+    fs::write(&path, json).map_err(|e| format!("Couldn't write {}: {}", path.display(), e))?;
+    Ok(path.display().to_string())
+}
+
+/// A file the page wanted to download (base64), saved into Downloads without overwriting anything.
+#[tauri::command]
+fn save_download(app: tauri::AppHandle, name: String, data: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("Bad download data: {}", e))?;
+    let path = free_path(&downloads(&app)?, &clean_name(&name));
+    fs::write(&path, bytes).map_err(|e| format!("Couldn't save {}: {}", path.display(), e))?;
+    Ok(path.display().to_string())
+}
+
+/// Every table as a tab in an .xlsx in Downloads, from the same JSON the data file holds.
+#[tauri::command]
+fn export_xlsx(app: tauri::AppHandle, json: String, day: String) -> Result<String, String> {
+    use rust_xlsxwriter::{Format, Workbook};
+    let data: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let tables = data["tables"].as_object().ok_or("No tables in the data")?;
+    let bold = Format::new().set_bold();
+    let mut book = Workbook::new();
+    for (name, rows) in tables {
+        let rows = rows.as_array().cloned().unwrap_or_default();
+        let mut cols: Vec<String> = Vec::new();
+        for row in &rows {
+            for key in row.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+                if !cols.contains(&key) {
+                    cols.push(key);
+                }
+            }
+        }
+        let sheet = book.add_worksheet();
+        let xl = |e: rust_xlsxwriter::XlsxError| e.to_string();
+        sheet.set_name(name.chars().take(31).collect::<String>()).map_err(xl)?;
+        for (c, col) in cols.iter().enumerate() {
+            sheet.write_string_with_format(0, c as u16, col, &bold).map_err(xl)?;
+        }
+        for (r, row) in rows.iter().enumerate() {
+            let r = r as u32 + 1;
+            for (c, col) in cols.iter().enumerate() {
+                let c = c as u16;
+                match &row[col] {
+                    serde_json::Value::Null => {}
+                    serde_json::Value::Bool(b) => { sheet.write_boolean(r, c, *b).map_err(xl)?; }
+                    serde_json::Value::Number(n) => { sheet.write_number(r, c, n.as_f64().unwrap_or(0.0)).map_err(xl)?; }
+                    serde_json::Value::String(s) => { sheet.write_string(r, c, cell(s)).map_err(xl)?; }
+                    other => { sheet.write_string(r, c, cell(&other.to_string())).map_err(xl)?; }
+                }
+            }
+        }
+        sheet.set_freeze_panes(1, 0).map_err(xl)?;
+        sheet.autofit();
+    }
+    let path = free_path(&downloads(&app)?, &format!("Horror HQ {}.xlsx", clean_name(&day)));
+    book.save(&path).map_err(|e| format!("Couldn't save {}: {}", path.display(), e))?;
+    Ok(path.display().to_string())
+}
+
+/// Shows a file in Finder.
+#[tauri::command]
+fn reveal(path: String) -> Result<(), String> {
+    let mut cmd = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" });
+    if cfg!(target_os = "macos") {
+        cmd.arg("-R").arg(&path);
+    } else {
+        cmd.arg(Path::new(&path).parent().unwrap_or(Path::new("/")));
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Opens a web link in the default browser (links can't open new windows inside the app).
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only web links can be opened".into());
+    }
+    std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn downloads(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let paths = app.path();
+    let dir = match paths.download_dir() {
+        Ok(dir) => dir,
+        Err(_) => paths.home_dir().map_err(|e| e.to_string())?.join("Downloads"),
+    };
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Keeps a file name to letters, digits and a little punctuation, so it can't climb out of its folder.
+fn clean_name(name: &str) -> String {
+    let s: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || " ._-()".contains(c) { c } else { '-' })
+        .collect();
+    let s = s.trim_start_matches('.').trim().to_string();
+    if s.is_empty() { "Horror HQ".into() } else { s }
+}
+
+/// "name.ext", or "name 2.ext", "name 3.ext"... whichever doesn't exist yet.
+fn free_path(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) => (&name[..i], &name[i..]),
+        None => (name, ""),
+    };
+    (2..)
+        .map(|n| dir.join(format!("{} {}{}", stem, n, ext)))
+        .find(|p| !p.exists())
+        .unwrap()
+}
+
+/// Spreadsheet cells hold at most 32,767 characters.
+fn cell(s: &str) -> &str {
+    match s.char_indices().nth(32000) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
 }
 
 fn is_day(day: &str) -> bool {
@@ -141,7 +284,7 @@ fn main() {
                 let _ = app.emit("import-fresh", ());
             }
         })
-        .invoke_handler(tauri::generate_handler![load_data, save_data])
+        .invoke_handler(tauri::generate_handler![load_data, save_data, data_path, backup_now, save_download, export_xlsx, reveal, open_url])
         .run(tauri::generate_context!())
         .expect("error while running Horror HQ");
 }

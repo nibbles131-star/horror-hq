@@ -171,6 +171,7 @@ if (typeof module !== 'undefined') module.exports = AdminLogic;
 
   // ---------------------------------------------------------------- backup
   function renderBackup(a) {
+    if (window.HQMac) return HQMac.backupPanel(); // the Mac app keeps its backups in Documents, not Drive
     var d = st.data, lb = d.lastBackup, lw = d.lastWeekly;
     return '<div class="grid g2"><div class="panel"><h2>Snapshot backup</h2><p class="small muted">Copies every data tab into a new, dated Google Sheet in your Drive. Takes a minute.</p>' +
           '<button class="btn primary" data-adbackup' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Backing up…' : 'Back up now') + '</button>' +

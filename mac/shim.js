@@ -2,15 +2,11 @@
  * Horror HQ for Mac, window side. The Apps Script server code runs in a worker (shim-worker.js,
  * bundled by build_web.js into #hq-worker-src); google.script.run here just passes calls to it.
  * This side also owns the data file: it loads it at start, saves whatever the worker hands back
- * after a change, shows the import screen (first run, or Horror HQ > Import a Fresh Copy…) and
- * locks the sections that haven't moved in yet.
+ * after a change, shows the import screen (first run, or Horror HQ > Import a Fresh Copy…), and
+ * stands in for the browser where a Mac app differs: downloads go to Downloads, web links open in
+ * the default browser, and Admin's Backup tab offers Mac backups and a spreadsheet export.
  */
 var HQMac = (function () {
-  var SECTIONS_OPEN = ['home', 'library', 'collections', 'codex', 'admin'];
-  var LATER = { planner: 4, excavator: 4, wall: 3, funhouse: 3, shrine: 3, stats: 3 };
-  // Admin tabs that wait for stage 4.
-  var ADMIN_LATER = ['merge', 'backup'];
-
   var worker = null;
   var pending = {};
   var nextId = 1;
@@ -34,6 +30,7 @@ var HQMac = (function () {
     worker.onmessage = function (ev) {
       var m = ev.data;
       if (m.type === 'save') return save(m.json);
+      if (m.type === 'snapshot') { var sp = pending[m.id]; delete pending[m.id]; if (sp) sp.ok(m.json); return; }
       if (m.type === 'opened') { var cb = onOpened; onOpened = null; if (cb) cb(null, m.films); return; }
       if (m.type === 'failed') { var fb = onOpened; onOpened = null; if (fb) fb(new Error(m.error)); return; }
       if (m.type === 'result') {
@@ -195,25 +192,122 @@ var HQMac = (function () {
     }, true);
   }
 
-  // ------------------------------------------------------------------ sections not here yet
-  function guardNav() {
-    var css = Object.keys(LATER).map(function (k) {
-      return '#nav [data-nav="' + k + '"]{opacity:.35}#nav [data-nav="' + k + '"]::after{content:" 🔒";font-size:11px}';
-    }).join('') + ADMIN_LATER.map(function (k) { return '[data-adtab="' + k + '"]{display:none!important}'; }).join('');
-    var style = document.createElement('style');
-    style.textContent = css;
-    document.head.appendChild(style);
-    document.addEventListener('click', function (ev) {
-      var t = ev.target.closest && ev.target.closest('[data-nav]');
-      if (!t || SECTIONS_OPEN.indexOf(t.dataset.nav) >= 0) return;
-      ev.stopPropagation();
-      ev.preventDefault();
-      toast('That section moves in at stage ' + (LATER[t.dataset.nav] || 'later') + '. Use the Google version for now.', 'bad');
-    }, true);
+  // ------------------------------------------------------------------ downloads, links, backups
+  function snapshot() {
+    return ready.then(function () {
+      return new Promise(function (ok, bad) {
+        var id = nextId++;
+        pending[id] = { ok: ok, bad: bad };
+        worker.postMessage({ type: 'snapshot', id: id });
+      });
+    });
   }
 
-  document.addEventListener('DOMContentLoaded', function () { guardNav(); watchPosters(); coffinOnError(); boot(); });
+  function stamp() {
+    var d = new Date();
+    return today() + ' ' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+  }
 
-  return { google: google, poster: poster };
+  function saved(msg, path) {
+    toastAction(msg + ': ' + path.split('/').pop(), 'Show in Finder', function () { reveal(path); });
+  }
+
+  function reveal(path) { tauri().invoke('reveal', { path: path }).catch(function (e) { toast(String(e), 'bad'); }); }
+
+  function toastAction(msg, label, fn) {
+    var box = document.getElementById('toasts');
+    if (!box) return;
+    var t = document.createElement('div');
+    t.className = 'toast ok';
+    t.textContent = msg + ' ';
+    var b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = label;
+    b.onclick = function () { t.remove(); fn(); };
+    t.appendChild(b);
+    box.appendChild(t);
+    setTimeout(function () { t.remove(); }, 9000);
+  }
+
+  function base64(buf) {
+    var bytes = new Uint8Array(buf), out = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(out);
+  }
+
+  // <a download> links (the JSON export, the Horror ID card) can't download inside an app window, so save them ourselves.
+  function catchDownloads(ev) {
+    var link = ev.target.closest && ev.target.closest('a[download]');
+    if (!link || !tauri()) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var name = link.getAttribute('download') || 'Horror HQ download';
+    fetch(link.href).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      return tauri().invoke('save_download', { name: name, data: base64(buf) });
+    }).then(function (path) { saved('Saved to Downloads', path); })
+      .catch(function (e) { toast("Couldn't save the download: " + e, 'bad'); });
+  }
+
+  // Web links open in the default browser instead of trying (and failing) to open a window here.
+  function catchLinks(ev) {
+    var link = ev.target.closest && ev.target.closest('a[href]');
+    if (!link || link.hasAttribute('download') || !tauri()) return;
+    var href = link.getAttribute('href');
+    if (!/^https?:\/\//.test(href)) return;
+    ev.preventDefault();
+    tauri().invoke('open_url', { url: href }).catch(function (e) { toast(String(e), 'bad'); });
+  }
+
+  function backupNow(btn) {
+    btn.disabled = true;
+    snapshot().then(function (json) { return tauri().invoke('backup_now', { json: json, stamp: stamp() }); })
+      .then(function (path) { saved('Snapshot saved in Backups', path); })
+      .catch(function (e) { toast("Couldn't back up: " + e, 'bad'); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  function exportXlsx(btn) {
+    btn.disabled = true;
+    snapshot().then(function (json) { return tauri().invoke('export_xlsx', { json: json, day: today() }); })
+      .then(function (path) { saved('Spreadsheet saved to Downloads', path); })
+      .catch(function (e) { toast("Couldn't export: " + e, 'bad'); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  function showData() {
+    tauri().invoke('data_path').then(reveal).catch(function (e) { toast(String(e), 'bad'); });
+  }
+
+  function onMacClick(ev) {
+    var b = ev.target.closest && ev.target.closest('[data-macbackup],[data-macxlsx],[data-macfinder]');
+    if (!b) return;
+    if (b.hasAttribute('data-macbackup')) backupNow(b);
+    else if (b.hasAttribute('data-macxlsx')) exportXlsx(b);
+    else showData();
+  }
+
+  /** Admin > Backup & export on the Mac (ViewAdmin.html asks for this instead of the Google Drive version). */
+  function backupPanel() {
+    return '<div class="grid g2"><div class="panel"><h2>Snapshot backup</h2><p class="small muted">Saves a dated copy of everything into ' +
+        'Documents › Horror HQ › Backups. Snapshots are never cleared out automatically.</p>' +
+        '<button class="btn primary" data-macbackup>Back up now</button></div>' +
+      '<div class="panel"><h2>Daily backups</h2><p class="small muted">The first time you change anything each day, the previous copy is ' +
+        'tucked into the same Backups folder. The last 14 days are kept. Nothing to switch on.</p>' +
+        '<button class="btn ghost" data-macfinder>Show in Finder</button></div></div>' +
+      '<div class="panel"><h2>Export</h2><p class="small muted">Every table, for safekeeping or for poking at. Both land in Downloads.</p>' +
+        '<div style="display:flex;gap:8px"><button class="btn" data-macxlsx>Export to spreadsheet (.xlsx)</button>' +
+        '<button class="btn ghost" data-adexport>Download JSON</button></div></div>';
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('click', catchDownloads, true);
+    document.addEventListener('click', catchLinks, true);
+    document.addEventListener('click', onMacClick);
+    watchPosters();
+    coffinOnError();
+    boot();
+  });
+
+  return { google: google, poster: poster, backupPanel: backupPanel };
 })();
 var google = HQMac.google;

@@ -5,8 +5,9 @@
  * window to be saved, in the same format as Admin > Download JSON plus a "mac" block for script
  * properties (the TMDB key).
  *
- * Messages in:  {type:'open', text} | {type:'import', text} | {type:'call', id, name, args}
+ * Messages in:  {type:'open', text} | {type:'import', text} | {type:'call', id, name, args} | {type:'snapshot', id}
  * Messages out: {type:'opened', films} | {type:'failed', error} | {type:'result', id, ok, value|error} | {type:'save', json}
+ *               | {type:'snapshot', id, json}
  */
 var VERSION = '__VERSION__';
 // Calls that only read; everything else is followed by a save.
@@ -181,6 +182,7 @@ self.onmessage = function (ev) {
     }
     return;
   }
+  if (m.type === 'snapshot') return self.postMessage({ type: 'snapshot', id: m.id, json: snapshot() });
   if (m.type === 'call') {
     var value;
     try {
