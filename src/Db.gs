@@ -10,7 +10,7 @@ function dbSheet_(table, create) {
   if (!SCHEMA[table]) throw new Error('Unknown table ' + table);
   var ss = dbSpreadsheet_();
   var sh = ss.getSheetByName(table);
-  if (!sh && create) {
+  if (!sh && (create || LATE_TABLES_[table])) {
     sh = ss.insertSheet(table);
     var cols = schemaColumns_(table);
     sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');

@@ -42,6 +42,22 @@ var BESTIARY_CATEGORIES = [
 var CLASSIC_STUDIOS = ['Hammer', 'Universal', 'Paramount', 'RKO', 'MGM'];
 
 /**
+ * Books (comics and graphic novels included), TV and games. Each kind has its own statuses, in shelf order:
+ * want, in progress, done (one or more), gave up. `unit` is what progress counts.
+ */
+var MEDIA_KINDS = {
+  book: { statuses: ['Want to read', 'Reading', 'Read', 'DNF'], active: ['Reading'], done: ['Read'], dropped: ['DNF'],
+          formats: ['Novel', 'Novella', 'Short stories', 'Anthology', 'Non-fiction', 'Graphic novel', 'Comic', 'Manga'], unit: 'pages' },
+  tv:   { statuses: ['Want to watch', 'Watching', 'Caught up', 'Finished', 'DNF'], active: ['Watching', 'Caught up'], done: ['Finished'], dropped: ['DNF'],
+          formats: ['Series', 'Miniseries', 'Anthology', 'Docuseries', 'Animated'], unit: 'episodes' },
+  game: { statuses: ['Backlog', 'Playing', 'Beaten', '100%', 'Abandoned'], active: ['Playing'], done: ['Beaten', '100%'], dropped: ['Abandoned'],
+          formats: ['PC', 'PlayStation', 'Xbox', 'Switch', 'Mobile', 'VR', 'Retro'], unit: 'hours' }
+};
+
+// Tables added after the first release: a workbook that predates them grows the tab on first use.
+var LATE_TABLES_ = { MediaItems: true, MediaLists: true, MediaListEntries: true };
+
+/**
  * Column types: s = string (default), n = number or blank, b = TRUE/FALSE,
  * d = ISO date yyyy-MM-dd, t = ISO timestamp, j = JSON.
  */
@@ -151,6 +167,20 @@ var SCHEMA = {
   Audit: {
     key: 'audit_id',
     cols: ['audit_id', 'at:t', 'action', 'entity', 'entity_id', 'before:j', 'after:j', 'source']
+  },
+  MediaItems: {
+    key: 'item_id',
+    cols: ['item_id', 'kind', 'title', 'year:n', 'creator', 'format', 'series', 'series_no', 'cover_url', 'source', 'source_id',
+           'status', 'rating_10:n', 'reaction', 'progress:n', 'progress_total:n', 'started_on:d', 'finished_on:d', 'favourite:b',
+           'version:n', 'created_at:t', 'modified_at:t']
+  },
+  MediaLists: {
+    key: 'list_id',
+    cols: ['list_id', 'kind', 'name', 'icon', 'description', 'sort_order:n', 'created_at:t']
+  },
+  MediaListEntries: {
+    key: 'entry_id',
+    cols: ['entry_id', 'list_id', 'item_id', 'sequence:n', 'note', 'created_at:t']
   },
   MigrationExceptions: {
     key: 'exception_id',

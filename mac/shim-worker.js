@@ -11,7 +11,7 @@
  */
 var VERSION = '__VERSION__';
 // Calls that only read; everything else is followed by a save.
-var READS = ['apiBootstrap', 'apiExcavatorData', 'apiAdminData', 'apiMergePreview', 'apiPosterStatus', 'apiExportAll', 'apiPosterSearch', 'apiTestPosterKey'];
+var READS = ['apiBootstrap', 'apiExcavatorData', 'apiAdminData', 'apiMergePreview', 'apiPosterStatus', 'apiExportAll', 'apiPosterSearch', 'apiTestPosterKey', 'apiMediaSearch'];
 var server = null;
 var dbBook = null;
 var props = {};

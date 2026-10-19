@@ -28,6 +28,14 @@ the binary; at start-up, and from Horror HQ › Check for Updates…, the app as
 newer `mac-build-N` with a `Horror-HQ.dmg`, downloads it (checked against GitHub's sha256 digest), copies
 the app out of the mounted .dmg over itself and reopens. This needs the repo to stay public.
 
+Stage 6: books (comics and graphic novels included), TV and games. These live in `src/` like everything
+else (`ApiMedia.gs`, `ViewMedia.html`, tables `MediaItems`/`MediaLists`/`MediaListEntries`), so the shared
+code stays shared; a Google workbook that predates them grows the tabs on first use. The app opens on a hub
+of realms (Films, The Grimoire, Channel 666, Game Over); each non-film realm has Overview, Library, Lists and
+Stats. Search uses free sources the worker can reach from the window (CORS): Open Library + Google Books,
+TMDB (poster key) or TVmaze, and Wikipedia's video game articles. TMDB TV posters go through the poster cache;
+other covers load straight from their sites and fall back to a placeholder when offline.
+
 Build: push a change under `mac/` and the "Mac app" workflow publishes `Horror-HQ.dmg` as a
 pre-release. Locally: `npm ci && npm run build` (needs Rust; on Linux, libwebkit2gtk-4.1-dev).
 Icons come from `art/icon.svg` → `art/icon.png` → `npm run icons`.

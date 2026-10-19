@@ -1,0 +1,1027 @@
+<style>
+  /* ---------------------------------------------------------------- realms: each one keeps the blood, with its own accent */
+  body { --realm: var(--blood2); --realm2: var(--blood); --realmbg: #3b0a0e; --realmglow: #e3242b66; --realmfont: var(--display); }
+  body[data-realm="book"] { --realm: #f0b24f; --realm2: #9a5a12; --realmbg: #2b1606; --realmglow: #f0b24f55; --realmfont: "IM Fell English SC", Georgia, serif; }
+  body[data-realm="tv"] { --realm: #6dffa8; --realm2: #13804a; --realmbg: #06231a; --realmglow: #6dffa855; --realmfont: "VT323", "Courier New", monospace; }
+  body[data-realm="game"] { --realm: #c86bff; --realm2: #6a1fa8; --realmbg: #1d0a2e; --realmglow: #c86bff66; --realmfont: "Press Start 2P", "Courier New", monospace; }
+  body[data-realm="book"], body[data-realm="tv"], body[data-realm="game"] {
+    background: radial-gradient(1000px 520px at 85% -10%, var(--realmglow), transparent 60%), radial-gradient(900px 700px at -10% 110%, #3a050a55, transparent 60%), var(--bg);
+    background-attachment: fixed;
+  }
+  body[data-realm="book"] .panel::before, body[data-realm="tv"] .panel::before, body[data-realm="game"] .panel::before { background: linear-gradient(90deg, transparent, var(--realm), transparent); }
+  body[data-realm="book"] .panel h2, body[data-realm="tv"] .panel h2, body[data-realm="game"] .panel h2 { color: var(--realm); }
+  body[data-realm="book"] nav button.on, body[data-realm="tv"] nav button.on, body[data-realm="game"] nav button.on { background: linear-gradient(90deg, var(--realmbg), #1a0709); box-shadow: inset 3px 0 0 var(--realm), 0 0 18px var(--realmglow); }
+  body[data-realm="book"] .stat b, body[data-realm="tv"] .stat b, body[data-realm="game"] .stat b { text-shadow: 0 0 16px var(--realmglow); }
+  body[data-realm="game"] .stat b { font-family: var(--realmfont); font-size: 20px; line-height: 1.9; }
+  body[data-realm="tv"] .stat b { font-family: var(--realmfont); font-size: 40px; line-height: 1; }
+  body[data-realm="book"] .stat b { font-family: var(--realmfont); }
+  body[data-realm="book"] .stars button.on, body[data-realm="tv"] .stars button.on, body[data-realm="game"] .stars button.on,
+  body[data-realm="book"] .seg button.on, body[data-realm="tv"] .seg button.on, body[data-realm="game"] .seg button.on { background: linear-gradient(180deg, var(--realm), var(--realm2)); border-color: var(--realm); color: #120406; box-shadow: 0 0 18px var(--realmglow); }
+  body[data-realm="book"] .bar i, body[data-realm="tv"] .bar i, body[data-realm="game"] .bar i { background: linear-gradient(90deg, var(--realm2), var(--realm)); box-shadow: 0 0 10px var(--realmglow); }
+  body[data-realm="book"] .drawer, body[data-realm="tv"] .drawer, body[data-realm="game"] .drawer { border-left-color: var(--realm2); box-shadow: -20px 0 70px #000e, -2px 0 30px var(--realmglow); }
+  body[data-realm="book"] .drawer h3, body[data-realm="tv"] .drawer h3, body[data-realm="game"] .drawer h3 { color: var(--realm); }
+
+  .brand { cursor: pointer; }
+  nav .realms { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 0 0 12px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: #0e0405; }
+  nav .realms button { justify-content: center; padding: 7px 0; font-size: 17px; border-radius: 8px; filter: grayscale(.7); opacity: .7; }
+  nav .realms button:hover { transform: none; filter: none; opacity: 1; }
+  nav .realms button.on { filter: none; opacity: 1; background: var(--realmbg); box-shadow: inset 0 -2px 0 var(--realm), 0 0 14px var(--realmglow); }
+  nav .navhead { font-family: var(--type); font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--faint); padding: 6px 12px 4px; }
+  nav .realmlink .count { margin-left: auto; font-size: 11px; color: var(--faint); font-family: var(--type); }
+
+  /* ---------------------------------------------------------------- covers */
+  .mimg { object-fit: cover; background: linear-gradient(160deg, #3a0c10, #12060a); display: inline-grid; place-items: center; flex: none; vertical-align: middle; color: var(--muted); }
+  .mthumb { width: 30px; height: 45px; border-radius: 4px; font-size: 14px; box-shadow: 0 2px 8px #000a; }
+  .mlg { width: 62px; height: 93px; border-radius: 6px; font-size: 24px; box-shadow: 0 6px 18px #000c; }
+  .mxl { width: 150px; height: 225px; border-radius: 10px; font-size: 48px; box-shadow: 0 14px 40px #000d, 0 0 0 1px #ffffff14, 0 0 30px var(--realmglow); }
+  .kind-game .mimg.mxl, .kind-game.mcard .mimg { object-fit: cover; }
+
+  /* ---------------------------------------------------------------- hub */
+  .hubhero { position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 18px; padding: 34px 36px 30px; margin-bottom: 22px;
+    background: radial-gradient(700px 300px at 15% 0%, #6d071066, transparent 70%), radial-gradient(500px 260px at 100% 100%, #3b0a0e, transparent 70%), linear-gradient(180deg, #1b0709, #0d0405);
+    box-shadow: 0 20px 60px #000a, inset 0 1px 0 #ffffff0d; display: flex; gap: 26px; align-items: flex-end; flex-wrap: wrap; }
+  .hubhero .kicker { font-family: var(--type); letter-spacing: 4px; text-transform: uppercase; font-size: 12px; color: var(--muted); }
+  .hubhero h1 { margin: 2px 0 6px; font-family: var(--display); font-weight: 400; font-size: 76px; line-height: .95; letter-spacing: 3px; color: #fff; text-shadow: 0 0 30px #e3242b99, 0 4px 0 #000; }
+  .hubhero h1 span { color: var(--blood2); }
+  .hubhero .sub { font-family: var(--type); color: var(--muted); }
+  .hubhero .tally { display: flex; gap: 22px; margin-top: 16px; flex-wrap: wrap; }
+  .hubhero .tally div { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); font-weight: 700; }
+  .hubhero .tally b { display: block; font-family: var(--display); font-weight: 400; font-size: 38px; letter-spacing: 1px; color: #fff; line-height: 1; text-shadow: 0 0 18px #e3242b88; }
+  .hubhero .search { margin-left: auto; }
+  .hubhero .eyes { position: absolute; right: 30px; top: 22px; font-size: 22px; letter-spacing: 6px; opacity: .55; animation: blink 6s infinite; pointer-events: none; }
+  @keyframes blink { 0%, 46%, 50%, 100% { opacity: .55; } 48% { opacity: 0; } }
+
+  .portals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+  .portal { --c: var(--blood2); --c2: var(--blood); --cbg: #2a080b; --cf: var(--display);
+    position: relative; overflow: hidden; cursor: pointer; border-radius: 18px; min-height: 330px; padding: 18px; display: flex; flex-direction: column; justify-content: flex-end;
+    border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--cbg) 60%, #000), #0a0304 75%);
+    box-shadow: 0 16px 40px #000b; transition: transform .25s cubic-bezier(.2, .9, .3, 1.3), box-shadow .25s, border-color .25s; }
+  .portal:hover { transform: translateY(-6px) rotate(-.4deg); border-color: var(--c); box-shadow: 0 24px 60px #000d, 0 0 40px color-mix(in srgb, var(--c) 45%, transparent); }
+  .portal.p-book { --c: #f0b24f; --c2: #9a5a12; --cbg: #3a1d06; --cf: "IM Fell English SC", Georgia, serif; }
+  .portal.p-tv { --c: #6dffa8; --c2: #13804a; --cbg: #06301f; --cf: "VT323", monospace; }
+  .portal.p-game { --c: #c86bff; --c2: #6a1fa8; --cbg: #2a0b45; --cf: "Press Start 2P", monospace; }
+  .portal::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .9; background: radial-gradient(260px 200px at 50% 22%, color-mix(in srgb, var(--c) 30%, transparent), transparent 70%); }
+  .portal.p-tv::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, #ffffff07 0 1px, transparent 1px 3px); animation: roll 7s linear infinite; }
+  @keyframes roll { to { background-position: 0 120px; } }
+  .portal.p-game::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35; background-image: linear-gradient(#c86bff22 1px, transparent 1px), linear-gradient(90deg, #c86bff22 1px, transparent 1px); background-size: 22px 22px; mask-image: linear-gradient(180deg, #000, transparent 60%); -webkit-mask-image: linear-gradient(180deg, #000, transparent 60%); }
+  .portal.p-book::after { content: "🕯️"; position: absolute; top: 14px; right: 16px; font-size: 22px; filter: drop-shadow(0 0 10px #f0b24f); animation: candle 2.4s ease-in-out infinite; }
+  @keyframes candle { 50% { transform: scale(1.08) rotate(2deg); filter: drop-shadow(0 0 16px #f0b24f); } }
+  .pstack { position: absolute; left: 0; right: 0; top: 26px; height: 170px; }
+  .pstack .mimg { position: absolute; left: 50%; top: 0; width: 104px; height: 156px; border-radius: 8px; font-size: 38px; box-shadow: 0 12px 30px #000e, 0 0 0 1px #ffffff18; transition: transform .35s cubic-bezier(.2, .9, .3, 1.3); }
+  .pstack .mimg:nth-child(1) { transform: translateX(-50%) translateX(-58px) rotate(-12deg) translateY(14px); }
+  .pstack .mimg:nth-child(2) { transform: translateX(-50%) translateX(58px) rotate(12deg) translateY(14px); }
+  .pstack .mimg:nth-child(3) { transform: translateX(-50%); z-index: 1; }
+  .portal:hover .pstack .mimg:nth-child(1) { transform: translateX(-50%) translateX(-74px) rotate(-17deg) translateY(10px); }
+  .portal:hover .pstack .mimg:nth-child(2) { transform: translateX(-50%) translateX(74px) rotate(17deg) translateY(10px); }
+  .portal:hover .pstack .mimg:nth-child(3) { transform: translateX(-50%) translateY(-6px) scale(1.04); }
+  .pbody { position: relative; z-index: 2; }
+  .pname { font-family: var(--cf); color: var(--c); font-size: 30px; line-height: 1.05; text-shadow: 0 0 18px color-mix(in srgb, var(--c) 60%, transparent), 0 2px 0 #000; }
+  .portal.p-tv .pname { font-size: 40px; }
+  .portal.p-game .pname { font-size: 15px; line-height: 1.6; }
+  .ptag { color: var(--muted); font-size: 12px; margin: 4px 0 10px; font-family: var(--type); }
+  .pstats { display: flex; gap: 14px; }
+  .pstats span { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--faint); font-weight: 700; }
+  .pstats b { display: block; color: #fff; font-size: 20px; letter-spacing: 0; font-weight: 800; }
+  .pnow { margin-top: 10px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px dashed color-mix(in srgb, var(--c) 30%, transparent); padding-top: 8px; }
+  .pnow b { color: var(--text); }
+  .portal .enter { position: absolute; right: 16px; bottom: 16px; z-index: 2; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 800; color: var(--c); opacity: 0; transform: translateX(-6px); transition: opacity .2s, transform .2s; }
+  .portal:hover .enter { opacity: 1; transform: none; }
+
+  .haunt { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+  .hcard { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: #13060799; min-width: 0; }
+  .hcard .t { flex: 1; min-width: 0; }
+  .hcard .ttl { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .hcard .bar { margin: 6px 0 4px; }
+  .hcard.k-book .bar i { background: linear-gradient(90deg, #9a5a12, #f0b24f); box-shadow: 0 0 10px #f0b24f66; }
+  .hcard.k-tv .bar i { background: linear-gradient(90deg, #13804a, #6dffa8); box-shadow: 0 0 10px #6dffa866; }
+  .hcard.k-game .bar i { background: linear-gradient(90deg, #6a1fa8, #c86bff); box-shadow: 0 0 10px #c86bff66; }
+  .kchip { font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line2); color: var(--muted); white-space: nowrap; }
+  .kchip.k-book { color: #f0b24f; border-color: #6a3f0e; } .kchip.k-tv { color: #6dffa8; border-color: #145a37; } .kchip.k-game { color: #c86bff; border-color: #4c1a78; } .kchip.k-film { color: var(--blood3); }
+
+  .coverrow { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 8px; }
+  .coverrow .cv { position: relative; flex: none; width: 92px; cursor: pointer; text-align: center; font-size: 11.5px; }
+  .coverrow .cv .mimg { width: 92px; height: 138px; border-radius: 8px; font-size: 30px; box-shadow: 0 8px 22px #000c; transition: transform .2s; }
+  .coverrow .cv:hover .mimg { transform: translateY(-4px) rotate(-1.5deg); }
+  .coverrow .cv .nm { margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .coverrow .cv .rt { position: absolute; top: 6px; right: 6px; background: #000c; border: 1px solid var(--line2); border-radius: 7px; padding: 0 6px; font-weight: 800; font-size: 12px; color: #fff; }
+
+  /* the poison wheel */
+  .mreel { min-height: 196px; display: flex; gap: 14px; align-items: center; }
+  .mreel.spinning .mimg { animation: jitter .09s linear infinite; filter: blur(1px) saturate(1.4); }
+  @keyframes jitter { 50% { transform: translateY(-3px) rotate(1deg); } }
+  .mreel .rname { font-family: var(--display); font-size: 28px; line-height: 1.05; margin: 6px 0 8px; text-shadow: 0 0 14px var(--realmglow); }
+  body[data-realm="book"] .mreel .rname, body[data-realm="tv"] .mreel .rname { font-family: var(--realmfont); }
+  body[data-realm="tv"] .mreel .rname { font-size: 34px; }
+  body[data-realm="game"] .mreel .rname { font-family: var(--realmfont); font-size: 13px; line-height: 1.7; }
+
+  /* ---------------------------------------------------------------- realm hero */
+  .rhero { position: relative; overflow: hidden; border-radius: 18px; padding: 28px 30px; margin-bottom: 20px; display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap;
+    border: 1px solid color-mix(in srgb, var(--realm) 35%, transparent); background: radial-gradient(600px 260px at 12% 0%, var(--realmglow), transparent 70%), linear-gradient(180deg, color-mix(in srgb, var(--realmbg) 70%, #000), #0b0304);
+    box-shadow: 0 18px 50px #000b; }
+  .rhero .kicker { font-family: var(--type); letter-spacing: 4px; text-transform: uppercase; font-size: 11.5px; color: var(--muted); }
+  .rhero h1 { margin: 4px 0 6px; font-family: var(--realmfont); font-weight: 400; font-size: 58px; line-height: 1; color: var(--realm); text-shadow: 0 0 26px var(--realmglow), 0 3px 0 #000; }
+  .rhero .sub { color: var(--muted); font-family: var(--type); font-size: 13px; }
+  .rhero .acts { margin-left: auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .rhero.r-tv h1 { font-size: 78px; letter-spacing: 2px; animation: glitch 5s steps(1) infinite; }
+  .rhero.r-tv::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, #ffffff08 0 1px, transparent 1px 3px); }
+  @keyframes glitch { 0%, 92%, 100% { text-shadow: 0 0 26px var(--realmglow), 0 3px 0 #000; transform: none; }
+    93% { text-shadow: -3px 0 #ff2b4d, 3px 0 #2bd9ff; transform: translateX(2px) skewX(-6deg); } 95% { text-shadow: 3px 0 #ff2b4d, -3px 0 #2bd9ff; transform: translateX(-2px); } }
+  .rhero.r-game h1 { font-size: 30px; line-height: 1.4; text-shadow: 3px 3px 0 #ff2b8a, 0 0 24px var(--realmglow); }
+  .rhero.r-game::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .3; background-image: linear-gradient(#c86bff22 1px, transparent 1px), linear-gradient(90deg, #c86bff22 1px, transparent 1px); background-size: 24px 24px; }
+  .rhero.r-book h1 { letter-spacing: 1px; }
+  .rhero.r-book::after { content: "🕯️"; position: absolute; right: 22px; top: 16px; font-size: 26px; filter: drop-shadow(0 0 14px #f0b24f); animation: candle 2.4s ease-in-out infinite; }
+  body[data-realm="book"] .btn.primary, body[data-realm="tv"] .btn.primary, body[data-realm="game"] .btn.primary {
+    background: linear-gradient(180deg, var(--realm), var(--realm2)); border-color: var(--realm); color: #120406; text-shadow: none; box-shadow: inset 0 1px 0 #ffffff55, 0 4px 16px var(--realmglow); }
+
+  /* ---------------------------------------------------------------- shelf grid */
+  .mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 18px 14px; }
+  .mcard { position: relative; cursor: pointer; min-width: 0; }
+  .mcard .mimg { width: 100%; aspect-ratio: 2 / 3; height: auto; border-radius: 9px; font-size: 40px; box-shadow: 0 10px 26px #000c, 0 0 0 1px #ffffff10; transition: transform .2s, box-shadow .2s; }
+  .mcard:hover .mimg { transform: translateY(-5px); box-shadow: 0 16px 34px #000d, 0 0 26px var(--realmglow); }
+  .mcard .nm { margin-top: 7px; font-weight: 700; font-size: 13px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mcard .by { font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mcard .rt { position: absolute; top: 8px; right: 8px; background: #000c; border: 1px solid var(--realm); color: #fff; border-radius: 8px; padding: 0 7px; font-weight: 800; font-size: 13px; box-shadow: 0 0 10px var(--realmglow); }
+  .mcard .fav { position: absolute; top: 7px; left: 8px; font-size: 16px; filter: drop-shadow(0 0 6px #e3242b); }
+  .mcard .pg { position: absolute; left: 8px; right: 8px; top: calc((100% - 52px) - 16px); }
+  .mcard .ribbon { position: absolute; left: 0; right: 0; top: 0; aspect-ratio: 2 / 3; pointer-events: none; border-radius: 9px; }
+  .mcard.s-dropped .mimg { filter: grayscale(.85) brightness(.6); }
+  .mcard.s-want .mimg { filter: saturate(.75) brightness(.85); }
+  .mcard.s-want:hover .mimg { filter: none; }
+
+  .mstatus { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line2); white-space: nowrap; color: var(--muted); }
+  .mstatus.active { color: var(--realm); border-color: color-mix(in srgb, var(--realm) 45%, transparent); background: color-mix(in srgb, var(--realmbg) 70%, transparent); }
+  .mstatus.done { color: var(--ok); border-color: #2f5a2c; background: #0f1d0d; }
+  .mstatus.dropped { color: #fff; border-color: var(--blood2); background: var(--gore); }
+
+  /* ---------------------------------------------------------------- now / progress */
+  .nowrow { display: flex; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px dashed #3a1214; }
+  .nowrow:last-child { border-bottom: 0; }
+  .nowrow .t { flex: 1; min-width: 0; }
+  .nowrow .ttl { font-weight: 700; cursor: pointer; }
+  .nowrow .ttl:hover { color: var(--realm); }
+  .nowrow .bar { margin: 8px 0 5px; height: 9px; }
+  .bump { display: flex; gap: 5px; flex-wrap: wrap; }
+  .bump .btn { padding: 3px 9px; font-size: 12px; }
+
+  /* ---------------------------------------------------------------- lists */
+  .mlistlayout { display: grid; grid-template-columns: 260px 1fr; gap: 18px; }
+  .mlistnav button[data-mlist] { all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 10px; align-items: center; width: 100%; padding: 9px 12px; border-radius: 9px; color: var(--muted); font-weight: 600; }
+  .mlistnav button[data-mlist]:hover { background: #2a0b0e; color: var(--text); }
+  .mlistnav button[data-mlist].on { background: var(--realmbg); color: #fff; box-shadow: inset 3px 0 0 var(--realm); }
+  .mlistnav button .n { margin-left: auto; font-size: 11px; color: var(--faint); }
+
+  /* ---------------------------------------------------------------- milestones */
+  .mile { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .mile div { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #11050699; position: relative; overflow: hidden; }
+  .mile div b { display: block; font-size: 13px; margin-top: 4px; }
+  .mile div .ic { font-size: 28px; filter: grayscale(1) brightness(.5); }
+  .mile div.got { border-color: color-mix(in srgb, var(--realm) 55%, transparent); box-shadow: 0 0 18px var(--realmglow); background: linear-gradient(180deg, color-mix(in srgb, var(--realmbg) 80%, transparent), #110506); }
+  .mile div.got .ic { filter: drop-shadow(0 0 10px var(--realmglow)); }
+  .mile div .bar { margin-top: 8px; height: 5px; }
+
+  /* ---------------------------------------------------------------- add modal */
+  .mmodal { position: fixed; left: 50%; top: 6vh; transform: translateX(-50%); width: min(860px, 94vw); max-height: 88vh; overflow: auto; z-index: 41; border-radius: 18px; padding: 24px 26px 26px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--realmbg) 55%, #120506), #0c0405); border: 1px solid var(--realm2); box-shadow: 0 30px 90px #000, 0 0 50px var(--realmglow); animation: rise .22s ease-out; }
+  .mmodal h2 { margin: 0 0 4px; font-family: var(--realmfont); font-weight: 400; font-size: 36px; color: var(--realm); text-shadow: 0 0 20px var(--realmglow); }
+  body[data-realm="game"] .mmodal h2 { font-size: 17px; line-height: 1.8; }
+  .mmodal .postergrid .pick:hover { border-color: var(--realm); background: var(--realmbg); }
+  .mmodal .postergrid .pick .fmt { color: var(--realm); font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .mmodal .postergrid .pick.added { opacity: .45; pointer-events: none; }
+
+  .mfields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .mfields label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; display: flex; flex-direction: column; gap: 3px; }
+  .mfields .input, .mfields select { width: 100%; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text); font-size: 14px; }
+  .bigempty { text-align: center; padding: 56px 20px; }
+  .bigempty .ic { font-size: 64px; filter: drop-shadow(0 0 20px var(--realmglow)); animation: bob 2.4s ease-in-out infinite; }
+  .bigempty h2 { justify-content: center; font-size: 15px !important; margin-top: 10px !important; }
+  @media (max-width: 1250px) { .portals { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 760px) { .portals, .mlistlayout, .mfields { grid-template-columns: 1fr; } .hubhero h1 { font-size: 54px; } }
+</style>
+<script>
+/*
+ * Books & comics, TV and games, plus the hub that sits above every realm. One set of screens serves all
+ * three kinds; KIND holds what differs (names, units, milestones). Data comes from apiBootstrap().media
+ * and every change goes through the apiMedia* calls in ApiMedia.gs.
+ */
+var Media = (function () {
+  var KIND = {
+    book: { realm: 'The Grimoire', label: 'Books & Comics', noun: 'book', nouns: 'books', icon: '📖', ph: '📕', tag: 'Cursed tomes, cosmic dread and comics with teeth.',
+      add: 'Summon a book', searchHint: 'Title, author or series', now: '🕯️ On the nightstand', next: '📚 The to-be-read pile', pick: 'Pick my next read',
+      done: 'Read', samples: ['The Shining', 'House of Leaves', 'Uzumaki', 'Mexican Gothic'],
+      sections: [['overview', '🕯️', 'The Grimoire'], ['library', '📚', 'The Shelves'], ['lists', '🔖', 'Reading Lists'], ['stats', '🏆', 'Stats + Milestones']] },
+    tv: { realm: 'Channel 666', label: 'TV', noun: 'show', nouns: 'shows', icon: '📺', ph: '📺', tag: 'Haunted houses, midnight masses and one more episode.',
+      add: 'Tune in a show', searchHint: 'Show title', now: '📡 Currently broadcasting', next: '📼 The watchlist', pick: 'Change the channel',
+      done: 'Finished', samples: ['The Haunting of Hill House', 'Midnight Mass', 'Twin Peaks', 'Chucky'],
+      sections: [['overview', '📡', 'Channel 666'], ['library', '📼', 'All Shows'], ['lists', '🔖', 'Binge Lists'], ['stats', '🏆', 'Stats + Milestones']] },
+    game: { realm: 'Game Over', label: 'Games', noun: 'game', nouns: 'games', icon: '🎮', ph: '👾', tag: 'Save rooms, jump scares and tank controls.',
+      add: 'Insert a game', searchHint: 'Game title', now: '🕹️ Now playing', next: '💾 The backlog', pick: 'Spin the cartridge',
+      done: 'Beaten', samples: ['Silent Hill 2', 'Resident Evil 4', 'Dead Space', 'Alan Wake 2'],
+      sections: [['overview', '🕹️', 'Game Over'], ['library', '💾', 'All Games'], ['lists', '🔖', 'Lists'], ['stats', '🏆', 'Stats + Milestones']] }
+  };
+  var MILESTONES = {
+    book: [['done', 1, '📖', 'Opened the Tome'], ['done', 10, '🐛', 'Bookworm of the Damned'], ['done', 25, '🕯️', 'Candlelit Scholar'],
+      ['done', 50, '📜', 'Keeper of the Grimoire'], ['done', 100, '🐙', 'Necronomicon Certified'], ['pages', 1000, '🩸', 'A Thousand Paper Cuts'],
+      ['pages', 10000, '🗝️', 'Ten Thousand Pages of Dread'], ['comics', 5, '💥', 'Gutter Dweller'], ['comics', 25, '🦇', 'Panel Predator'], ['dropped', 1, '🔥', 'Burned at the Stake']],
+    tv: [['done', 1, '📡', 'Pilot Season'], ['done', 5, '🛋️', 'Binge Victim'], ['done', 15, '📺', 'Static Addict'], ['done', 30, '👹', 'Couch Possessed'],
+      ['done', 60, '☠️', 'The Final Broadcast'], ['units', 100, '📼', 'Cursed Tape Collector'], ['units', 500, '🌙', 'Five Hundred Nights'],
+      ['caught', 1, '⏳', 'Waiting for the Next Victim'], ['dropped', 1, '🔁', 'Channel Changed']],
+    game: [['done', 1, '🪙', 'Insert Coin'], ['done', 5, '💾', 'Save Room Regular'], ['done', 15, '🧟', 'Survival Horror Veteran'], ['done', 30, '👹', 'Final Boss'],
+      ['perfect', 1, '💯', 'Completionist of Doom'], ['units', 100, '⏱️', 'A Hundred Hours in Hell'], ['units', 500, '🌫️', 'Lost in the Fog'], ['dropped', 1, '🎮', 'Rage Quit']]
+  };
+  var MILE_TEXT = { done: ['finished', 'finished'], pages: ['page read', 'pages read'], comics: ['comic or graphic novel read', 'comics & graphic novels read'],
+    dropped: ['given up on', 'given up on'], caught: ['show caught up on', 'shows caught up on'], perfect: ['game at 100%', 'games at 100%'] };
+
+  var S = null; // model built from M.raw.media
+  var ui = { lib: {}, list: {}, drawer: null, cover: null, add: null, spin: {}, spinning: null, edit: false };
+  var api = null;
+
+  // ------------------------------------------------------------------ model
+  function model(M) {
+    if (S && S.raw === M.raw && S.items === M.raw.media.items) return S;
+    var raw = M.raw;
+    raw.media = raw.media || { items: [], lists: [], entries: [] };
+    S = { raw: raw, items: raw.media.items, kinds: raw.media.kinds || null, byId: {}, lists: raw.media.lists, entries: raw.media.entries, byList: {}, byItem: {} };
+    S.items.forEach(function (i) { S.byId[i.item_id] = i; });
+    S.lists.forEach(function (l) { S.byList[l.list_id] = []; });
+    S.entries.forEach(function (e) {
+      (S.byList[e.list_id] = S.byList[e.list_id] || []).push(e);
+      (S.byItem[e.item_id] = S.byItem[e.item_id] || []).push(e);
+    });
+    Object.keys(S.byList).forEach(function (k) { S.byList[k].sort(function (a, b) { return a.sequence - b.sequence; }); });
+    return S;
+  }
+  function M_() { return api.model(); }
+  function dirty() { var raw = M_().raw; raw.media.items = raw.media.items.slice(); S = null; }
+  function cfg(kind) { return (M_().raw.media.kinds || {})[kind] || FALLBACK[kind]; }
+  // Matches MEDIA_KINDS in Schema.gs, for a server that predates media in the bootstrap.
+  var FALLBACK = {
+    book: { statuses: ['Want to read', 'Reading', 'Read', 'DNF'], active: ['Reading'], done: ['Read'], dropped: ['DNF'], formats: ['Novel', 'Novella', 'Short stories', 'Anthology', 'Non-fiction', 'Graphic novel', 'Comic', 'Manga'], unit: 'pages' },
+    tv: { statuses: ['Want to watch', 'Watching', 'Caught up', 'Finished', 'DNF'], active: ['Watching', 'Caught up'], done: ['Finished'], dropped: ['DNF'], formats: ['Series', 'Miniseries', 'Anthology', 'Docuseries', 'Animated'], unit: 'episodes' },
+    game: { statuses: ['Backlog', 'Playing', 'Beaten', '100%', 'Abandoned'], active: ['Playing'], done: ['Beaten', '100%'], dropped: ['Abandoned'], formats: ['PC', 'PlayStation', 'Xbox', 'Switch', 'Mobile', 'VR', 'Retro'], unit: 'hours' }
+  };
+  function itemsOf(kind) { return model(M_()).items.filter(function (i) { return i.kind === kind; }); }
+  function phase(i) {
+    var c = cfg(i.kind);
+    return c.active.indexOf(i.status) >= 0 ? 'active' : c.done.indexOf(i.status) >= 0 ? 'done' : c.dropped.indexOf(i.status) >= 0 ? 'dropped' : 'want';
+  }
+  function isComic(i) { return i.kind === 'book' && /Comic|Graphic|Manga/.test(i.format); }
+  function unit(i) { return i.kind === 'book' ? (i.format === 'Comic' ? 'issues' : 'pages') : cfg(i.kind).unit; }
+  function step(i) { return i.kind === 'book' && i.format !== 'Comic' ? [1, 10, 50] : [1]; }
+  function done(i) { var p = phase(i); return p === 'done'; }
+  function rated(i) { return i.rating_10 !== null && i.rating_10 !== undefined; }
+
+  // ------------------------------------------------------------------ small pieces
+  function esc(s) { return api.esc(s); }
+  function cover(i, cls) {
+    var src = i && i.cover_url ? HQ.posterUrl(i.cover_url) : '';
+    var ph = i ? (i.kind ? KIND[i.kind].ph : '⚰️') : '⚰️';
+    return src ? '<img class="mimg ' + (cls || 'mthumb') + '" loading="lazy" src="' + esc(src) + '" alt="" data-ph="' + ph + '">'
+      : '<span class="mimg ' + (cls || 'mthumb') + '">' + ph + '</span>';
+  }
+  function filmCover(f, cls) {
+    return f && f.poster ? '<img class="mimg ' + (cls || 'mthumb') + '" loading="lazy" src="' + esc(f.poster) + '" alt="" data-ph="⚰️">' : '<span class="mimg ' + (cls || 'mthumb') + '">⚰️</span>';
+  }
+  function chip(i) { return '<span class="mstatus ' + phase(i) + '">' + esc(i.status) + '</span>'; }
+  function kchip(kind) { return '<span class="kchip k-' + kind + '">' + (kind === 'film' ? 'Film' : KIND[kind].noun) + '</span>'; }
+  function byline(i) { return [i.creator, i.year].filter(Boolean).join(' · '); }
+  function progressText(i) {
+    if (i.kind === 'game') return (i.progress || 0) + (i.progress === 1 ? ' hour' : ' hours') + ' played';
+    var u = unit(i);
+    return (i.progress || 0) + (i.progress_total ? ' / ' + i.progress_total : '') + ' ' + u;
+  }
+  function pct(i) {
+    if (done(i)) return 100;
+    if (!i.progress_total) return i.progress ? 8 : 0;
+    return Math.max(0, Math.min(100, Math.round((i.progress || 0) / i.progress_total * 100)));
+  }
+  function bar(i) { return '<div class="bar"><i style="width:' + pct(i) + '%"></i></div>'; }
+  function avg(list) {
+    var r = list.filter(rated);
+    return r.length ? Math.round(r.reduce(function (s, i) { return s + i.rating_10; }, 0) / r.length * 10) / 10 : null;
+  }
+  function recentFirst(a, b) { return String(b.modified_at).localeCompare(String(a.modified_at)); }
+  function finishedFirst(a, b) { return String(b.finished_on || b.modified_at).localeCompare(String(a.finished_on || a.modified_at)); }
+  function coverRow(list, empty) {
+    return list.length ? '<div class="coverrow">' + list.map(function (i) {
+      return '<div class="cv" data-mitem="' + esc(i.item_id) + '">' + cover(i, '') + (rated(i) ? '<span class="rt">' + i.rating_10 + '</span>' : '') + '<div class="nm">' + esc(i.title) + '</div></div>';
+    }).join('') + '</div>' : '<div class="empty">' + esc(empty) + '</div>';
+  }
+  function searchBox() {
+    return '<div class="search"><input id="gsearch" placeholder="Find any film, book, show or game" autocomplete="off"><kbd>/</kbd><div class="suggest" id="suggest" hidden></div></div>';
+  }
+  function stats(list) {
+    return '<div class="stats" style="grid-template-columns:repeat(' + list.length + ',1fr)">' + list.map(function (s) {
+      return '<div class="stat"><span>' + esc(s[0]) + '</span><b>' + esc(s[1]) + '</b></div>';
+    }).join('') + '</div>';
+  }
+  function tally(kind) {
+    var all = itemsOf(kind);
+    var t = { all: all, done: [], active: [], want: [], dropped: [], pages: 0, units: 0, comics: 0, caught: 0, perfect: 0 };
+    all.forEach(function (i) {
+      var p = phase(i);
+      t[p].push(i);
+      var n = p === 'done' ? Math.max(i.progress || 0, i.progress_total || 0) : (i.progress || 0);
+      if (i.kind === 'book') { if (unit(i) === 'pages') t.pages += n; if (isComic(i) && p === 'done') t.comics++; } else t.units += n;
+      if (i.status === 'Caught up') t.caught++;
+      if (i.status === '100%') t.perfect++;
+    });
+    t.dropped = t.dropped.length; t.avg = avg(all);
+    return t;
+  }
+
+  // ------------------------------------------------------------------ hub
+  function filmStats(M) {
+    var watched = M.films.filter(function (f) { return f.status === 'Watched'; });
+    var r = M.films.filter(function (f) { return f.rating !== null && f.rating !== undefined; });
+    return { all: M.films.length, done: watched.length, avg: r.length ? Math.round(r.reduce(function (s, f) { return s + f.rating; }, 0) / r.length * 10) / 10 : null };
+  }
+  function stackOf(list, coverFn) {
+    var withCover = list.filter(function (x) { return x.cover_url || x.poster; });
+    var src = (withCover.length >= 3 ? withCover : list).slice(0, 3);
+    while (src.length < 3) src.push(null);
+    return '<div class="pstack">' + src.map(function (x) { return coverFn(x, ''); }).join('') + '</div>';
+  }
+  function portal(id, nav, name, tag, stack, st, now) {
+    return '<div class="portal p-' + id + '" data-nav="' + nav + '">' + stack + '<div class="pbody"><div class="pname">' + esc(name) + '</div><div class="ptag">' + esc(tag) + '</div>' +
+      '<div class="pstats">' + st.map(function (s) { return '<span><b>' + esc(s[1]) + '</b>' + esc(s[0]) + '</span>'; }).join('') + '</div>' +
+      '<div class="pnow">' + now + '</div></div><span class="enter">Enter →</span></div>';
+  }
+
+  function renderHub(a) {
+    var M = M_();
+    var fs = filmStats(M);
+    var best = M.films.filter(function (f) { return f.rating >= 9 && f.poster; }).sort(function (x, y) { return y.rating - x.rating; });
+    var filmPool = best.length >= 3 ? best.slice(0, 12) : M.films.filter(function (f) { return f.poster; }).slice(0, 12);
+    var shuffled = filmPool.slice().sort(function () { return Math.random() - 0.5; });
+    var today = HQ.isoToday();
+    var nextUp = M.raw.agenda.filter(function (x) { return x.planned_date >= today; }).sort(function (x, y) { return x.planned_date.localeCompare(y.planned_date); })[0];
+    var nextFilm = nextUp && M.byId[nextUp.film_id];
+    var rn = HQ.rateNext(M).length;
+    var portals = portal('films', 'home', 'The Screening Room', 'Every film, list, franchise and trophy.', stackOf(shuffled, filmCover),
+      [['tracked', fs.all], ['watched', fs.done], ['avg', fs.avg === null ? '—' : fs.avg]],
+      nextFilm ? 'Next up: <b>' + esc(nextFilm.title) + '</b> · ' + esc(a.fmtDate(nextUp.planned_date)) : rn ? '<b>' + rn + '</b> watched films waiting for a rating' : 'Nothing scheduled. Suspiciously calm.');
+    var totalAll = fs.all, totalDone = fs.done, activeAll = [];
+    ['book', 'tv', 'game'].forEach(function (k) {
+      var t = tally(k), K = KIND[k];
+      totalAll += t.all.length; totalDone += t.done.length;
+      activeAll = activeAll.concat(t.active);
+      var cur = t.active.slice().sort(recentFirst)[0];
+      var picks = t.all.slice().sort(function (x, y) { return (y.rating_10 || 0) - (x.rating_10 || 0) || recentFirst(x, y); });
+      portals += portal(k, k + ':overview', K.realm, K.tag, stackOf(picks, cover),
+        [['tracked', t.all.length], [K.done.toLowerCase(), t.done.length], ['avg', t.avg === null ? '—' : t.avg]],
+        cur ? (k === 'book' ? 'Reading' : k === 'tv' ? 'Watching' : 'Playing') + ': <b>' + esc(cur.title) + '</b>' + (cur.progress_total && k !== 'game' ? ' · ' + pct(cur) + '%' : '')
+          : t.all.length ? t.want.length + ' waiting in the ' + (k === 'book' ? 'pile' : k === 'tv' ? 'watchlist' : 'backlog') : 'Empty. ' + K.add + ' →');
+    });
+    activeAll.sort(recentFirst);
+    var fresh = model(M).items.filter(done).sort(finishedFirst).slice(0, 12);
+    var hall = model(M).items.filter(function (i) { return i.rating_10 >= 9; }).map(function (i) { return { r: i.rating_10, html: '<div class="cv" data-mitem="' + esc(i.item_id) + '">' + cover(i, '') + '<span class="rt">' + i.rating_10 + '</span><div class="nm">' + esc(i.title) + '</div></div>' }; })
+      .concat(M.films.filter(function (f) { return f.rating === 10; }).map(function (f) { return { r: 10, html: '<div class="cv" data-film="' + esc(f.id) + '">' + filmCover(f, '') + '<span class="rt">10</span><div class="nm">' + esc(f.title) + '</div></div>' }; }))
+      .sort(function (x, y) { return y.r - x.r || Math.random() - 0.5; }).slice(0, 16);
+
+    return '<div class="hubhero"><div class="eyes">👁️👁️</div><div><div class="kicker">Welcome back to</div><h1>HORROR <span>HQ</span></h1>' +
+        '<div class="sub">Every nightmare you’ve watched, read, binged and played.</div>' +
+        '<div class="tally"><div><b>' + totalAll + '</b>horrors logged</div><div><b>' + totalDone + '</b>survived</div><div><b>' + activeAll.length + '</b>in progress</div></div></div>' +
+        searchBox() + '</div>' +
+      '<div class="portals">' + portals + '</div>' +
+      (activeAll.length ? '<div class="panel" style="margin-bottom:18px"><h2>🩸 Currently haunting you</h2><div class="haunt">' + activeAll.map(function (i) {
+        return '<div class="hcard k-' + i.kind + '">' + cover(i, 'mlg') + '<div class="t"><div class="ttl" data-mitem="' + esc(i.item_id) + '">' + esc(i.title) + '</div>' +
+          '<div class="small faint">' + kchip(i.kind) + ' ' + esc(progressText(i)) + '</div>' + bar(i) +
+          '<div class="bump">' + step(i).map(function (n) { return '<button class="btn" data-mbump="' + esc(i.item_id) + '" data-by="' + n + '">+' + n + '</button>'; }).join('') + '</div></div></div>';
+      }).join('') + '</div></div>' : '') +
+      '<div class="grid g2">' +
+        '<div class="panel"><h2>🎰 Pick your poison <span class="act muted small">anything unwatched, unread or unplayed</span></h2>' + reel('all') + '</div>' +
+        '<div class="panel"><h2>⚰️ Fresh kills</h2>' + coverRow(fresh, 'Finish a book, show or game and it lands here.') + '</div>' +
+      '</div>' +
+      '<div class="panel" style="margin-top:18px"><h2>👑 Hall of the damned best <span class="act muted small">your 10/10 films, and 9+ everything else</span></h2>' +
+        (hall.length ? '<div class="coverrow">' + hall.map(function (h) { return h.html; }).join('') + '</div>' : '<div class="empty">Rate something a 9 or 10 and it ascends.</div>') + '</div>';
+  }
+
+  // ------------------------------------------------------------------ the poison wheel
+  function pool(kind) {
+    var M = M_();
+    if (kind !== 'all') return itemsOf(kind).filter(function (i) { return phase(i) === 'want'; }).map(function (i) { return { kind: i.kind, item: i }; });
+    return M.films.filter(function (f) { return f.status === 'Not watched' && HQ.isListed(M, f); }).map(function (f) { return { kind: 'film', film: f }; })
+      .concat(model(M).items.filter(function (i) { return phase(i) === 'want'; }).map(function (i) { return { kind: i.kind, item: i }; }));
+  }
+  function pickCard(p) {
+    if (!p) return '';
+    if (p.film) return filmCover(p.film, 'mxl') + '<div style="min-width:0">' + kchip('film') + '<div class="rname">' + esc(p.film.title) + '</div><div class="muted small">' + esc(p.film.year || '') + '</div>';
+    return cover(p.item, 'mxl') + '<div style="min-width:0">' + kchip(p.kind) + '<div class="rname">' + esc(p.item.title) + '</div><div class="muted small">' + esc(byline(p.item)) + '</div>';
+  }
+  function reel(kind) {
+    var p = ui.spin[kind];
+    var n = pool(kind).length;
+    if (p && (p.film ? M_().byId[p.film.id] : model(M_()).byId[p.item.item_id])) {
+      return '<div class="mreel" id="reel-' + kind + '">' + pickCard(p) +
+        '<div style="margin-top:12px"><button class="btn primary" data-mspin="' + kind + '">Spin again</button> ' +
+        (p.film ? '<button class="btn" data-film="' + esc(p.film.id) + '">Open</button>' : '<button class="btn" data-mitem="' + esc(p.item.item_id) + '">Open</button>') + '</div></div></div>';
+    }
+    return '<div class="mreel" id="reel-' + kind + '"><div class="mimg mxl">🎲</div><div><div class="rname">' + (n ? 'Fate is waiting.' : 'Nothing in the pool.') + '</div>' +
+      '<div class="muted small">' + n + ' in the pool. Spinning never changes your data.</div>' +
+      (n ? '<div style="margin-top:12px"><button class="btn primary" data-mspin="' + kind + '">Spin</button></div>' : '') + '</div></div>';
+  }
+  function spin(kind) {
+    var list = pool(kind);
+    if (!list.length || ui.spinning) return;
+    var el = document.getElementById('reel-' + kind);
+    var ticks = 0, prev = ui.spin[kind];
+    ui.spinning = setInterval(function () {
+      var p = list[Math.floor(Math.random() * list.length)];
+      if (el) { el.className = 'mreel spinning'; el.innerHTML = pickCard(p) + '</div>'; }
+      if (++ticks >= 16) {
+        clearInterval(ui.spinning); ui.spinning = null;
+        if (list.length > 1 && prev && (prev.film || prev.item) === (p.film || p.item)) p = list[(list.indexOf(p) + 1) % list.length];
+        ui.spin[kind] = p;
+        api.render();
+      }
+    }, 80);
+  }
+
+  // ------------------------------------------------------------------ realm screens
+  function hero(kind, sub) {
+    var K = KIND[kind];
+    return '<div class="rhero r-' + kind + '"><div><div class="kicker">' + esc(K.label) + '</div><h1>' + esc(K.realm) + '</h1><div class="sub">' + esc(sub || K.tag) + '</div></div>' +
+      '<div class="acts">' + searchBox() + '<button class="btn primary" data-madd="' + kind + '">+ ' + esc(K.add) + '</button></div></div>';
+  }
+  function bigEmpty(kind) {
+    var K = KIND[kind];
+    return '<div class="panel bigempty"><div class="ic">' + K.icon + '</div><h2>The ' + esc(K.nouns) + ' are missing. For now.</h2>' +
+      '<div class="muted" style="margin-bottom:16px">Search for anything and the cover, year and details come with it.</div>' +
+      '<button class="btn primary" data-madd="' + kind + '">+ ' + esc(K.add) + '</button>' +
+      '<div class="chips" style="justify-content:center;margin-top:16px">' + K.samples.map(function (s) {
+        return '<span class="chip click" data-madd="' + kind + '" data-q="' + esc(s) + '">' + esc(s) + '</span>';
+      }).join('') + '</div></div>';
+  }
+
+  function renderOverview(kind) {
+    var K = KIND[kind], c = cfg(kind), t = tally(kind);
+    if (!t.all.length) return hero(kind) + bigEmpty(kind);
+    var unitStat = kind === 'book' ? ['Pages turned', t.pages] : kind === 'tv' ? ['Episodes', t.units] : ['Hours played', t.units];
+    var active = t.active.slice().sort(recentFirst);
+    var want = t.want.slice().sort(recentFirst);
+    return hero(kind) +
+      stats([['Tracked', t.all.length], [K.done, t.done.length], [c.active[0], t.active.length], [c.statuses[0], t.want.length],
+        ['Avg rating', t.avg === null ? '—' : t.avg + '/10'], unitStat]) +
+      '<div class="grid g3">' +
+        '<div class="panel" style="grid-column:span 2"><h2>' + esc(K.now) + ' <span class="act muted small">' + active.length + '</span></h2>' +
+          (active.length ? active.map(nowRow).join('') : '<div class="empty">Nothing on the go. Start something from the pile.</div>') + '</div>' +
+        '<div class="panel"><h2>🎲 ' + esc(K.pick) + '</h2>' + reel(kind) + '</div>' +
+      '</div>' +
+      '<div class="grid g2" style="margin-top:18px">' +
+        '<div class="panel"><h2>' + esc(K.next) + ' <span class="act muted small">' + want.length + '</span></h2>' +
+          (want.length ? want.slice(0, 6).map(function (i) {
+            return '<div class="row">' + cover(i) + '<span class="t"><a class="film-link" data-mitem="' + esc(i.item_id) + '">' + esc(i.title) + '</a> <span class="small faint">' + esc(byline(i)) + '</span></span>' +
+              '<button class="btn" data-mstart="' + esc(i.item_id) + '">Start</button></div>';
+          }).join('') + (want.length > 6 ? '<div style="margin-top:10px"><button class="btn ghost" data-nav="' + kind + ':library" data-mpreset="want">See all ' + want.length + ' →</button></div>' : '')
+            : '<div class="empty">The pile is empty. Dangerous.</div>') + '</div>' +
+        '<div class="panel"><h2>⚰️ Recently ' + esc(K.done.toLowerCase()) + '</h2>' + coverRow(t.done.slice().sort(finishedFirst).slice(0, 12), 'Nothing finished yet.') + '</div>' +
+      '</div>' +
+      '<div class="panel" style="margin-top:18px"><h2>🏅 Top rated</h2>' + coverRow(t.all.filter(rated).sort(function (x, y) { return y.rating_10 - x.rating_10 || recentFirst(x, y); }).slice(0, 14), 'No ratings yet.') + '</div>';
+  }
+
+  function nowRow(i) {
+    return '<div class="nowrow">' + cover(i, 'mlg') + '<div class="t"><div class="ttl" data-mitem="' + esc(i.item_id) + '">' + esc(i.title) + '</div>' +
+      '<div class="small faint">' + esc(byline(i)) + ' ' + chip(i) + '</div>' + bar(i) +
+      '<div class="small muted">' + esc(progressText(i)) + (i.progress_total && i.kind !== 'game' ? ' · ' + pct(i) + '%' : '') + '</div></div>' +
+      '<div class="bump">' + step(i).map(function (n) { return '<button class="btn" data-mbump="' + esc(i.item_id) + '" data-by="' + n + '">+' + n + '</button>'; }).join('') +
+      '<button class="btn" data-mfinish="' + esc(i.item_id) + '">' + esc(KIND[i.kind].done) + ' ✓</button></div></div>';
+  }
+
+  function libState(kind) {
+    return ui.lib[kind] = ui.lib[kind] || { q: '', status: '', format: '', rated: '', sort: 'recent' };
+  }
+  function libraryRows(kind) {
+    var L = libState(kind);
+    var q = HQ.normalise(L.q);
+    return itemsOf(kind).filter(function (i) {
+      if (q && (HQ.normalise(i.title + ' ' + i.creator + ' ' + i.series + ' ' + (i.year || ''))).indexOf(q) < 0) return false;
+      if (L.status === 'want' || L.status === 'active' || L.status === 'done' || L.status === 'dropped') { if (phase(i) !== L.status) return false; }
+      else if (L.status && i.status !== L.status) return false;
+      if (L.format && i.format !== L.format) return false;
+      if (L.rated === 'rated' && !rated(i)) return false;
+      if (L.rated === 'unrated' && rated(i)) return false;
+      if (L.rated === 'loved' && !(i.rating_10 >= 9)) return false;
+      if (L.rated === 'fav' && !i.favourite) return false;
+      return true;
+    }).sort(function (a, b) {
+      if (L.sort === 'title') return a.title.localeCompare(b.title);
+      if (L.sort === 'year') return (b.year || 0) - (a.year || 0) || a.title.localeCompare(b.title);
+      if (L.sort === 'rating') return (b.rating_10 || 0) - (a.rating_10 || 0) || a.title.localeCompare(b.title);
+      if (L.sort === 'finished') return finishedFirst(a, b);
+      if (L.sort === 'creator') return String(a.creator).localeCompare(String(b.creator)) || a.title.localeCompare(b.title);
+      return String(b.created_at).localeCompare(String(a.created_at));
+    });
+  }
+  function renderLibrary(kind) {
+    var K = KIND[kind], c = cfg(kind), L = libState(kind);
+    if (!itemsOf(kind).length) return hero(kind) + bigEmpty(kind);
+    var rows = libraryRows(kind);
+    var formats = {};
+    itemsOf(kind).forEach(function (i) { if (i.format) formats[i.format] = 1; });
+    return hero(kind, 'Every ' + K.noun + ' on your radar: wanted, started, finished or abandoned.') +
+      '<div class="panel"><div class="toolbar">' +
+        '<input class="input" id="mlq" placeholder="Filter by title, ' + (kind === 'book' ? 'author, series' : kind === 'tv' ? 'network' : 'year') + '" value="' + esc(L.q) + '" style="width:260px">' +
+        '<select data-mlib="status">' + api.options([['want', '— ' + c.statuses[0]], ['active', '— In progress'], ['done', '— ' + K.done], ['dropped', '— Gave up']].concat(c.statuses.length > 4 ? c.statuses : []), L.status, 'Any status') + '</select>' +
+        '<select data-mlib="format">' + api.options(Object.keys(formats).sort(), L.format, kind === 'game' ? 'Any platform' : 'Any format') + '</select>' +
+        '<select data-mlib="rated">' + api.options([['rated', 'Rated'], ['unrated', 'Unrated'], ['loved', '🖤 9+'], ['fav', '♥ Favourites']], L.rated, 'Any rating') + '</select>' +
+        '<select data-mlib="sort">' + api.options([['recent', 'Newest added'], ['title', 'Title'], ['creator', kind === 'book' ? 'Author' : kind === 'tv' ? 'Network' : 'Developer'], ['year', 'Year'], ['rating', 'Rating'], ['finished', 'Recently finished']], L.sort, 'Sort') + '</select>' +
+        '<span class="grow"></span><span class="muted small">' + rows.length + ' ' + K.nouns + '</span></div>' +
+      (rows.length ? '<div class="mgrid">' + rows.map(card).join('') + '</div>' : '<div class="empty">Nothing matches. Loosen a filter.</div>') + '</div>';
+  }
+  function card(i) {
+    var p = phase(i);
+    return '<div class="mcard kind-' + i.kind + ' s-' + p + '" data-mitem="' + esc(i.item_id) + '">' + cover(i, '') +
+      (rated(i) ? '<span class="rt">' + i.rating_10 + '</span>' : '') + (i.favourite ? '<span class="fav">♥</span>' : '') +
+      '<div class="nm">' + esc(i.title) + '</div><div class="by">' + esc(byline(i) || i.format) + '</div>' +
+      (p === 'active' ? bar(i) : '<div class="small">' + chip(i) + '</div>') + '</div>';
+  }
+
+  function renderLists(kind) {
+    var K = KIND[kind];
+    var m = model(M_());
+    var lists = m.lists.filter(function (l) { return l.kind === kind; }).sort(function (a, b) { return a.sort_order - b.sort_order; });
+    var sel = ui.list[kind] && m.byList[ui.list[kind]] ? ui.list[kind] : lists.length ? lists[0].list_id : null;
+    ui.list[kind] = sel;
+    var list = lists.filter(function (l) { return l.list_id === sel; })[0];
+    var entries = sel ? m.byList[sel] || [] : [];
+    var onIt = {};
+    entries.forEach(function (e) { onIt[e.item_id] = 1; });
+    var addable = itemsOf(kind).filter(function (i) { return !onIt[i.item_id]; }).sort(function (a, b) { return a.title.localeCompare(b.title); });
+    return hero(kind, 'Your own lists: challenges, rankings, the order to read a series in, whatever you like.') +
+      '<div class="mlistlayout"><div class="panel mlistnav"><h2>🔖 Lists</h2>' +
+        (lists.length ? lists.map(function (l) {
+          return '<button data-mlist="' + esc(l.list_id) + '" class="' + (l.list_id === sel ? 'on' : '') + '">' + esc(l.icon) + ' ' + esc(l.name) + '<span class="n">' + (m.byList[l.list_id] || []).length + '</span></button>';
+        }).join('') : '<div class="muted small" style="padding:6px 4px">No lists yet.</div>') +
+        '<div style="display:flex;gap:6px;margin-top:12px"><input class="input" id="mnewlist" placeholder="New list name" style="flex:1;min-width:0"><button class="btn" data-mnewlist="' + kind + '">Add</button></div></div>' +
+      '<div class="panel">' + (list ? '<h2>' + esc(list.icon) + ' ' + esc(list.name) + ' <span class="act"><button class="btn ghost small" data-mrenamelist="' + esc(list.list_id) + '">Rename</button>' +
+          '<button class="btn ghost small" data-mdellist="' + esc(list.list_id) + '">Delete</button></span></h2>' +
+          (list.description ? '<div class="muted small" style="margin-bottom:10px">' + esc(list.description) + '</div>' : '') +
+          (entries.length ? entries.map(function (e, n) {
+            var i = m.byId[e.item_id];
+            if (!i) return '';
+            return '<div class="row"><b style="width:26px;color:var(--realm)">' + (n + 1) + '</b>' + cover(i) + '<span class="t"><a class="film-link" data-mitem="' + esc(i.item_id) + '">' + esc(i.title) + '</a> <span class="small faint">' + esc(byline(i)) + '</span></span>' +
+              chip(i) + (rated(i) ? ' <b>' + i.rating_10 + '</b>' : '') +
+              '<button class="btn ghost small" data-mmove="' + esc(e.entry_id) + '" data-to="' + (n - 1) + '"' + (n ? '' : ' disabled') + '>↑</button>' +
+              '<button class="btn ghost small" data-mmove="' + esc(e.entry_id) + '" data-to="' + (n + 1) + '"' + (n < entries.length - 1 ? '' : ' disabled') + '>↓</button>' +
+              '<button class="btn ghost small" data-mremove="' + esc(e.entry_id) + '">✕</button></div>';
+          }).join('') : '<div class="empty">Empty list. Add ' + esc(K.nouns) + ' below, or from any ' + esc(K.noun) + '’s page.</div>') +
+          '<div class="toolbar" style="margin-top:12px"><select id="mlistadd" style="max-width:340px">' + api.options(addable.map(function (i) { return [i.item_id, i.title + (i.year ? ' (' + i.year + ')' : '')]; }), '', 'Add a ' + K.noun + '…') + '</select>' +
+          '<button class="btn" data-mlistaddbtn="' + esc(list.list_id) + '">Add</button></div>'
+        : '<div class="empty">Make your first list on the left. Ideas: “Read before Halloween”, “Best of ' + (kind === 'game' ? 'survival horror' : 'the year') + '”, “Series in order”.</div>') + '</div></div>';
+  }
+
+  function barRows(pairs, total) {
+    var max = Math.max.apply(null, pairs.map(function (p) { return p[1]; }).concat([1]));
+    return pairs.length ? pairs.map(function (p) {
+      return '<div class="row"><span style="width:150px" class="small">' + esc(p[0]) + '</span><div class="grow bar"><i style="width:' + (p[1] / max * 100) + '%"></i></div><b style="width:34px;text-align:right">' + p[1] + '</b></div>';
+    }).join('') : '<div class="empty">Nothing to count yet.</div>';
+  }
+  function countBy(list, fn) {
+    var o = {};
+    list.forEach(function (i) { var k = fn(i); if (k) o[k] = (o[k] || 0) + 1; });
+    return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1] || a[0].localeCompare(b[0]); });
+  }
+  function milestones(kind) {
+    var t = tally(kind);
+    var val = { done: t.done.length, pages: t.pages, comics: t.comics, dropped: t.dropped, units: t.units, caught: t.caught, perfect: t.perfect };
+    return MILESTONES[kind].map(function (m) {
+      var v = val[m[0]], got = v >= m[1];
+      var what = m[0] === 'units' ? (kind === 'tv' ? 'episodes watched' : 'hours played') : MILE_TEXT[m[0]][m[1] === 1 ? 0 : 1];
+      return { got: got, html: '<div class="' + (got ? 'got' : '') + '"><span class="ic">' + m[2] + '</span><b>' + esc(m[3]) + '</b><span class="small muted">' + m[1] + ' ' + esc(what) + '</span>' +
+        (got ? '' : '<div class="bar"><i style="width:' + Math.min(100, v / m[1] * 100) + '%"></i></div>') + '</div>' };
+    });
+  }
+  function renderStats(kind) {
+    var K = KIND[kind], c = cfg(kind), t = tally(kind);
+    if (!t.all.length) return hero(kind) + bigEmpty(kind);
+    var dist = HQ.VERDICTS.slice().reverse().map(function (v) {
+      return [v.label, t.all.filter(function (i) { var x = HQ.verdict(i.rating_10); return x && x.key === v.key; }).length];
+    });
+    var years = countBy(t.done, function (i) { return String(i.finished_on || '').slice(0, 4); }).sort(function (a, b) { return b[0].localeCompare(a[0]); });
+    var creators = kind === 'game' ? t.all.filter(function (i) { return i.progress; }).sort(function (a, b) { return b.progress - a.progress; }).slice(0, 8).map(function (i) { return [i.title, i.progress]; })
+      : countBy(t.all, function (i) { return String(i.creator || '').split(',')[0].trim(); }).slice(0, 8);
+    var miles = milestones(kind);
+    var decade = countBy(t.all, function (i) { return HQ.decadeOf(i.year); }).sort(function (a, b) { return a[0].localeCompare(b[0]); });
+    return hero(kind, 'The numbers behind the nightmares.') +
+      stats([['Tracked', t.all.length], [K.done, t.done.length], ['Gave up', t.dropped], ['Avg rating', t.avg === null ? '—' : t.avg],
+        kind === 'book' ? ['Pages', t.pages] : kind === 'tv' ? ['Episodes', t.units] : ['Hours', t.units], ['Milestones', miles.filter(function (m) { return m.got; }).length + '/' + miles.length]]) +
+      '<div class="grid g3">' +
+        '<div class="panel"><h2>📌 By status</h2>' + barRows(c.statuses.map(function (s) { return [s, t.all.filter(function (i) { return i.status === s; }).length]; })) + '</div>' +
+        '<div class="panel"><h2>' + (kind === 'game' ? '🕹️ By platform' : '🗂️ By format') + '</h2>' + barRows(countBy(t.all, function (i) { return i.format || (kind === 'game' ? 'Not set' : ''); })) + '</div>' +
+        '<div class="panel"><h2>📊 Verdicts</h2>' + barRows(dist) + '</div>' +
+      '</div>' +
+      '<div class="grid g3" style="margin-top:18px">' +
+        '<div class="panel"><h2>📅 ' + esc(K.done) + ' by year</h2>' + barRows(years) + '</div>' +
+        '<div class="panel"><h2>' + (kind === 'book' ? '✒️ Most-read authors' : kind === 'tv' ? '📡 Networks' : '⏱️ Most hours sunk') + '</h2>' + barRows(kind === 'game' ? creators : creators.filter(function (x) { return x[0]; })) + '</div>' +
+        '<div class="panel"><h2>🕰️ By decade</h2>' + barRows(decade) + '</div>' +
+      '</div>' +
+      '<div class="panel" style="margin-top:18px"><h2>🏆 Milestones</h2><div class="mile">' + miles.map(function (m) { return m.html; }).join('') + '</div></div>';
+  }
+
+  // ------------------------------------------------------------------ item drawer
+  function host(id) {
+    var el = document.getElementById(id);
+    if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); }
+    return el;
+  }
+  function openItem(id) {
+    if (ui.drawer !== id) { ui.cover = null; ui.edit = false; }
+    ui.drawer = id;
+    renderDrawer();
+  }
+  function closeDrawer() { ui.drawer = null; ui.cover = null; ui.edit = false; host('mdrawer').innerHTML = ''; }
+  function renderDrawer() {
+    var el = host('mdrawer');
+    var i = ui.drawer && model(M_()).byId[ui.drawer];
+    if (!i) { el.innerHTML = ''; ui.drawer = null; return; }
+    var K = KIND[i.kind], c = cfg(i.kind), m = model(M_());
+    var v = HQ.verdict(i.rating_10);
+    var entries = (m.byItem[i.item_id] || []);
+    var lists = m.lists.filter(function (l) { return l.kind === i.kind; });
+    var onIt = {};
+    entries.forEach(function (e) { onIt[e.list_id] = 1; });
+    var u = unit(i);
+    el.innerHTML = '<div class="scrim" data-mclose></div><div class="drawer kind-' + i.kind + '">' +
+      '<button class="btn ghost close" data-mclose>✕</button>' +
+      '<div style="display:flex;gap:18px"><div class="posterbox">' + cover(i, 'mxl') + '<button class="btn ghost small" data-mcover>' + (i.cover_url ? 'Wrong cover?' : 'Find cover') + '</button></div>' +
+        '<div style="min-width:0"><div class="small faint" style="text-transform:uppercase;letter-spacing:2px">' + esc(K.label) + (i.format ? ' · ' + esc(i.format) : '') + '</div><h1>' + esc(i.title) + '</h1>' +
+        '<div class="muted">' + esc(byline(i) || 'Details unknown') + '</div>' +
+        '<div class="chips" style="margin-top:10px">' + (i.series ? '<span class="chip">' + esc(i.series) + (i.series_no ? ' #' + esc(i.series_no) : '') + '</span>' : '') +
+          '<span class="chip click" data-mfav>' + (i.favourite ? '♥ Favourite' : '♡ Favourite') + '</span></div>' +
+        (v ? '<div style="margin-top:10px;font-size:16px">' + esc(v.label) + '</div>' : '') +
+        (i.started_on || i.finished_on ? '<div class="small faint" style="margin-top:8px">' + (i.started_on ? 'Started ' + esc(i.started_on) : '') + (i.started_on && i.finished_on ? ' · ' : '') + (i.finished_on ? K.done + ' ' + esc(i.finished_on) : '') + '</div>' : '') +
+      '</div></div>' +
+      renderCoverPick(i) +
+      '<h3>Status</h3><div class="seg">' + c.statuses.map(function (s) {
+        return '<button data-mstatus="' + esc(s) + '" class="' + (i.status === s ? 'on' : '') + '">' + esc(s) + '</button>';
+      }).join('') + '</div>' +
+      '<h3>Rating /10</h3><div class="stars">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (n) {
+        return '<button data-mrating="' + n + '" class="' + (i.rating_10 === n ? 'on' : '') + '">' + n + '</button>';
+      }).join('') + (rated(i) ? '<button data-mrating="" title="Clear rating">✕</button>' : '') + '</div>' +
+      '<h3>Progress</h3>' + (i.kind === 'game' ? '' : bar(i)) +
+        '<div class="toolbar" style="margin-top:8px"><span class="muted">' + esc(progressText(i)) + '</span><span class="grow"></span>' +
+          '<button class="btn" data-mbump="' + esc(i.item_id) + '" data-by="-1">−1</button>' +
+          step(i).map(function (n) { return '<button class="btn" data-mbump="' + esc(i.item_id) + '" data-by="' + n + '">+' + n + '</button>'; }).join('') + '</div>' +
+        '<div class="toolbar"><input class="input" id="mprog" type="number" min="0" value="' + esc(i.progress || '') + '" placeholder="' + (i.kind === 'game' ? 'Hours' : 'Done') + '" style="width:100px">' +
+          (i.kind === 'game' ? '' : '<span class="muted">of</span><input class="input" id="mtotal" type="number" min="0" value="' + esc(i.progress_total || '') + '" placeholder="Total" style="width:100px">') +
+          '<span class="muted small">' + esc(u) + '</span><button class="btn" data-msaveprog>Save</button></div>' +
+      '<h3>Your reaction</h3><textarea class="input" id="mreaction" placeholder="What did it do to you?">' + esc(i.reaction) + '</textarea>' +
+        '<div style="margin-top:8px"><button class="btn primary" data-msavereaction>Save reaction</button></div>' +
+      '<h3>On ' + entries.length + ' list' + (entries.length === 1 ? '' : 's') + '</h3>' +
+        entries.map(function (e) {
+          var l = m.lists.filter(function (x) { return x.list_id === e.list_id; })[0];
+          return l ? '<div class="row"><span class="t">' + esc(l.icon) + ' <b>' + esc(l.name) + '</b></span><button class="btn ghost small" data-mremove="' + esc(e.entry_id) + '">Remove</button></div>' : '';
+        }).join('') +
+        '<div class="toolbar" style="margin-top:8px"><select id="maddlist" style="max-width:300px">' + api.options(lists.filter(function (l) { return !onIt[l.list_id]; }).map(function (l) { return [l.list_id, l.icon + ' ' + l.name]; }), '', lists.length ? 'Add to a list…' : 'No lists yet') + '</select>' +
+          '<button class="btn" data-maddtolist>Add</button></div>' +
+      '<h3>Details <button class="btn ghost small" data-medit style="margin-left:8px">' + (ui.edit ? 'Cancel' : 'Edit') + '</button></h3>' +
+        (ui.edit ? '<div class="mfields">' +
+          '<label style="grid-column:span 2">Title<input class="input" id="me_title" value="' + esc(i.title) + '"></label>' +
+          '<label>' + (i.kind === 'book' ? 'Author' : i.kind === 'tv' ? 'Network' : 'Developer') + '<input class="input" id="me_creator" value="' + esc(i.creator) + '"></label>' +
+          '<label>Year<input class="input" id="me_year" type="number" value="' + esc(i.year || '') + '"></label>' +
+          '<label>' + (i.kind === 'game' ? 'Platform' : 'Format') + '<select id="me_format">' + (i.kind === 'game' ? '<option value="">Not set</option>' : '') + c.formats.concat(c.formats.indexOf(i.format) < 0 && i.format ? [i.format] : []).map(function (f) {
+            return '<option' + (f === i.format ? ' selected' : '') + '>' + esc(f) + '</option>'; }).join('') + '</select></label>' +
+          '<label>Series<input class="input" id="me_series" value="' + esc(i.series) + '"></label>' +
+          '<label>Number in series<input class="input" id="me_series_no" value="' + esc(i.series_no) + '"></label>' +
+          '<label>Started<input class="input" id="me_started_on" type="date" value="' + esc(i.started_on) + '"></label>' +
+          '<label>' + esc(K.done) + '<input class="input" id="me_finished_on" type="date" value="' + esc(i.finished_on) + '"></label>' +
+          '</div><div class="toolbar" style="margin-top:10px"><button class="btn primary" data-msavedetails>Save details</button><span class="grow"></span>' +
+          '<button class="btn ghost" data-mdelete>Delete this ' + esc(K.noun) + '</button></div>'
+          : '<div class="small muted">' + esc([i.format, i.series && (i.series + (i.series_no ? ' #' + i.series_no : '')), i.source !== 'manual' ? 'from ' + ({ openlibrary: 'Open Library', googlebooks: 'Google Books', tmdb: 'TMDB', tvmaze: 'TVmaze', wikipedia: 'Wikipedia' }[i.source] || i.source) : 'added by hand'].filter(Boolean).join(' · ')) + '</div>') +
+      '</div>';
+  }
+  function renderCoverPick(i) {
+    var p = ui.cover;
+    if (!p) return '';
+    return '<h3>Pick the right cover</h3><div class="toolbar"><input class="input" id="mc_q" value="' + esc(p.q) + '" style="flex:1">' +
+      '<button class="btn" data-mcoversearch>Search</button><button class="btn ghost" data-mcoverset="">No cover</button><button class="btn ghost" data-mcover>Cancel</button></div>' +
+      '<div class="toolbar"><input class="input" id="mc_url" placeholder="…or paste an image link (https://…)" style="flex:1"><button class="btn" data-mcoverurl>Use link</button></div>' +
+      (p.busy ? '<div class="empty">Rummaging through the archives…</div>' : p.results ? (p.results.length ? '<div class="postergrid">' + p.results.filter(function (r) { return r.cover; }).map(function (r, n) {
+        return '<div class="pick" data-mcoverset="' + esc(r.cover) + '"><img loading="lazy" src="' + esc(HQ.posterUrl(r.cover)) + '" alt=""><div>' + esc(r.title) + '</div><div class="faint">' + esc(r.year || '?') + '</div></div>';
+      }).join('') + '</div>' : '<div class="empty">No covers found. Try another title, or paste a link.</div>') : '');
+  }
+
+  // ------------------------------------------------------------------ add modal
+  function openAdd(kind, q) {
+    var c = cfg(kind);
+    ui.add = { kind: kind, q: q || '', mode: 'book', status: c.statuses[0], results: null, busy: false, added: {} };
+    renderAdd();
+    var inp = document.getElementById('madd_q');
+    if (inp) { inp.focus(); inp.select(); }
+    if (q) runAddSearch();
+  }
+  function closeAdd() { ui.add = null; host('mmodal').innerHTML = ''; }
+  function renderAdd() {
+    var el = host('mmodal');
+    var a = ui.add;
+    if (!a) { el.innerHTML = ''; return; }
+    var K = KIND[a.kind], c = cfg(a.kind);
+    el.innerHTML = '<div class="scrim" data-maddclose></div><div class="mmodal"><button class="btn ghost close" data-maddclose>✕</button>' +
+      '<h2>' + esc(K.add) + '</h2><div class="muted small" style="margin-bottom:14px">' +
+        (a.kind === 'book' ? 'Searches Open Library and Google Books. Comics mode puts graphic novels, trades and manga first.' : a.kind === 'tv' ? 'Searches TMDB (with your poster key) or TVmaze.' : 'Searches every video game on Wikipedia.') + '</div>' +
+      (a.kind === 'book' ? '<div class="seg" style="margin-bottom:12px"><button data-maddmode="book" class="' + (a.mode === 'book' ? 'on' : '') + '">📕 Books</button><button data-maddmode="comic" class="' + (a.mode === 'comic' ? 'on' : '') + '">💥 Comics &amp; graphic novels</button></div>' : '') +
+      '<div class="toolbar"><input class="input" id="madd_q" placeholder="' + esc(K.searchHint) + '" value="' + esc(a.q) + '" style="flex:1;min-width:220px" autocomplete="off">' +
+        '<button class="btn primary" data-maddsearch>Search</button>' +
+        '<label class="small muted">Add as <select id="madd_status">' + c.statuses.map(function (s) { return '<option' + (s === a.status ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') + '</select></label>' +
+        (a.kind === 'game' ? '<label class="small muted">on <select id="madd_platform">' + api.options(c.formats, a.platform || '', 'Platform?') + '</select></label>' : '') + '</div>' +
+      (a.busy ? '<div class="empty">Summoning…</div>' : a.error ? '<div class="empty">' + esc(a.error) + '</div>' : a.results ? (a.results.length ? '<div class="postergrid">' + a.results.map(function (r, n) {
+        return '<div class="pick' + (a.added[n] ? ' added' : '') + '" data-maddpick="' + n + '">' + (r.cover ? '<img loading="lazy" src="' + esc(HQ.posterUrl(r.cover)) + '" alt="">' : '<div class="noimg">' + K.ph + '</div>') +
+          '<div>' + esc(r.title) + '</div><div class="faint">' + esc([r.year, r.creator].filter(Boolean).join(' · ') || r.note || '') + '</div>' +
+          (r.format ? '<div class="fmt">' + esc(r.format) + '</div>' : '') + (a.added[n] ? '<div class="fmt">✓ added</div>' : '') + '</div>';
+      }).join('') + '</div>' : '<div class="empty">Nothing found. Try fewer words, or add it by hand.</div>') : '') +
+      '<div class="toolbar" style="margin-top:14px"><span class="grow"></span><button class="btn ghost" data-maddmanual>Can’t find it? Add “' + esc(a.q || 'it') + '” by hand</button></div></div>';
+  }
+  function runAddSearch() {
+    var a = ui.add;
+    if (!a || !a.q.trim()) return;
+    a.busy = true; a.error = null; a.added = {};
+    renderAdd();
+    var kind = a.kind;
+    api.call('apiMediaSearch', kind, a.q, a.mode).then(function (res) {
+      if (!ui.add || ui.add.kind !== kind) return;
+      ui.add.busy = false; ui.add.results = res; renderAdd();
+    }).catch(function (e) {
+      if (!ui.add) return;
+      ui.add.busy = false; ui.add.error = 'Search failed: ' + (e && e.message ? e.message : e); renderAdd();
+    });
+  }
+  function addItem(kind, data, status, then) {
+    return api.call('apiMediaAdd', kind, data, status).then(function (res) {
+      if (res.created) { M_().raw.media.items.push(res.item); dirty(); }
+      api.toast(res.created ? 'Added ' + res.item.title + ' to ' + KIND[kind].realm : res.item.title + ' is already on the shelf', 'ok');
+      api.render();
+      if (then) then(res);
+      return res;
+    }).catch(function (e) { api.toast(e.message || String(e), 'bad'); });
+  }
+
+  // ------------------------------------------------------------------ saving
+  function put(rec) {
+    var items = M_().raw.media.items;
+    for (var n = 0; n < items.length; n++) if (items[n].item_id === rec.item_id) { items[n] = rec; break; }
+    dirty();
+  }
+  function refresh() { api.render(); if (ui.drawer) renderDrawer(); }
+  function save(i, patch, label, undo) {
+    var before = {};
+    Object.keys(patch).forEach(function (k) { before[k] = i[k]; });
+    return api.call('apiMediaSave', i.item_id, patch, i.version).then(function (res) {
+      put(res.item);
+      if (res.conflict) api.toast('That changed elsewhere, so I reloaded it. Try again.', 'bad');
+      else if (label) api.toast(label + ' • ' + i.title, 'ok', undo ? { label: 'Undo', fn: function () { save(model(M_()).byId[i.item_id], before, 'Undone'); } } : null);
+      refresh();
+      return res;
+    }).catch(function (e) { api.toast('Not saved: ' + (e && e.message ? e.message : e), 'bad'); });
+  }
+  function bump(i, by) {
+    var next = Math.max(0, (i.progress || 0) + by);
+    if (i.progress_total && i.kind !== 'game') next = Math.min(next, i.progress_total);
+    var patch = { progress: next };
+    if (by > 0 && phase(i) === 'want') patch.status = cfg(i.kind).active[0];
+    save(i, patch, null).then(function (res) {
+      var j = res && res.item;
+      if (j && j.progress_total && j.progress >= j.progress_total && phase(j) === 'active' && j.kind !== 'game') {
+        api.toast('That’s the lot. ' + KIND[j.kind].done + '?', 'ok', { label: 'Mark ' + KIND[j.kind].done, fn: function () { finish(model(M_()).byId[j.item_id]); } });
+      }
+    });
+  }
+  function finish(i) {
+    var st = cfg(i.kind).done[0];
+    save(i, { status: st }, 'Marked ' + st, true).then(function () { if (!ui.drawer) openItem(i.item_id); });
+  }
+
+  // ------------------------------------------------------------------ events
+  function onClick(ev, a) {
+    api = a;
+    var t = ev.target.closest('[data-mitem],[data-mclose],[data-mstatus],[data-mrating],[data-mbump],[data-mfinish],[data-mstart],[data-msaveprog],[data-msavereaction],' +
+      '[data-mfav],[data-mcover],[data-mcoversearch],[data-mcoverset],[data-mcoverurl],[data-maddtolist],[data-mremove],[data-medit],[data-msavedetails],[data-mdelete],' +
+      '[data-madd],[data-maddclose],[data-maddmode],[data-maddsearch],[data-maddpick],[data-maddmanual],[data-mspin],[data-mlist],[data-mnewlist],[data-mrenamelist],' +
+      '[data-mdellist],[data-mmove],[data-mlistaddbtn],[data-mpreset],[data-item]');
+    if (!t) return false;
+    var d = t.dataset, m = model(M_());
+    if (d.item) { var sg = document.getElementById('suggest'); if (sg) sg.hidden = true; openItem(d.item); return true; }
+    if (d.mpreset) { var k0 = d.nav.split(':')[0]; libState(k0).status = d.mpreset; return false; }
+    if (d.mspin) { spin(d.mspin); return true; }
+    if (d.mitem && !d.mspin) { openItem(d.mitem); return true; }
+    if (d.madd) { openAdd(d.madd, d.q || ''); return true; }
+    if (d.maddclose !== undefined) { closeAdd(); return true; }
+    if (d.maddmode) { ui.add.mode = d.maddmode; ui.add.q = document.getElementById('madd_q').value; if (ui.add.q) runAddSearch(); else renderAdd(); return true; }
+    if (d.maddsearch !== undefined) { ui.add.q = document.getElementById('madd_q').value; runAddSearch(); return true; }
+    if (d.maddpick !== undefined) {
+      var ad = ui.add, r = ad.results[Number(d.maddpick)], n = Number(d.maddpick);
+      if (ad.kind === 'book' && ad.mode === 'comic' && !/Comic|Graphic|Manga/.test(r.format)) r = Object.assign({}, r, { format: 'Graphic novel' });
+      ad.status = document.getElementById('madd_status').value;
+      if (ad.kind === 'game') { ad.platform = document.getElementById('madd_platform').value; r = Object.assign({}, r, { format: ad.platform }); }
+      ad.added[n] = true; renderAdd();
+      addItem(ad.kind, r, ad.status, function (res) {
+        if (ui.add) { closeAdd(); openItem(res.item.item_id); }
+      });
+      return true;
+    }
+    if (d.maddmanual !== undefined) {
+      var ak = ui.add.kind, title = (document.getElementById('madd_q').value || '').trim() || prompt('Title:');
+      if (!title) return true;
+      var yr = prompt('Year for ' + title + ' (optional):') || '';
+      var pf = document.getElementById('madd_platform');
+      addItem(ak, { title: title, year: yr ? Number(yr) : null, format: ak === 'book' && ui.add.mode === 'comic' ? 'Graphic novel' : pf ? pf.value : '', source: 'manual' },
+        document.getElementById('madd_status').value, function (res) { closeAdd(); openItem(res.item.item_id); ui.edit = true; renderDrawer(); });
+      return true;
+    }
+    if (d.mlist) { var lk = m.lists.filter(function (l) { return l.list_id === d.mlist; })[0]; ui.list[lk.kind] = d.mlist; api.render(); return true; }
+    if (d.mnewlist) {
+      var name = document.getElementById('mnewlist').value.trim();
+      if (!name) { api.toast('Name the list first.', 'bad'); return true; }
+      api.call('apiMediaListSave', '', d.mnewlist, name, '🔖', '').then(function (rec) {
+        M_().raw.media.lists.push(rec); dirty(); ui.list[d.mnewlist] = rec.list_id; api.render(); api.toast('Made ' + rec.name, 'ok');
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.mrenamelist) {
+      var cur = m.lists.filter(function (l) { return l.list_id === d.mrenamelist; })[0];
+      var nn = prompt('List name:', cur.name);
+      if (nn === null) return true;
+      var ic = prompt('Icon (one emoji):', cur.icon);
+      api.call('apiMediaListSave', cur.list_id, cur.kind, nn, ic || cur.icon, cur.description).then(function (rec) {
+        var ls = M_().raw.media.lists; for (var x = 0; x < ls.length; x++) if (ls[x].list_id === rec.list_id) ls[x] = rec;
+        dirty(); api.render();
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.mdellist) {
+      var dl = m.lists.filter(function (l) { return l.list_id === d.mdellist; })[0];
+      if (!confirm('Delete the list ' + dl.name + '? Everything on it stays on your shelves.')) return true;
+      api.call('apiMediaListDelete', dl.list_id).then(function () {
+        var md = M_().raw.media;
+        md.lists = md.lists.filter(function (l) { return l.list_id !== dl.list_id; });
+        md.entries = md.entries.filter(function (e) { return e.list_id !== dl.list_id; });
+        dirty(); api.render(); api.toast('Deleted ' + dl.name, 'ok');
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.mmove) {
+      api.call('apiMediaListMove', d.mmove, Number(d.to)).then(function (ids) {
+        M_().raw.media.entries.forEach(function (e) { var p = ids.indexOf(e.entry_id); if (p >= 0) e.sequence = p + 1; });
+        dirty(); api.render();
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.mlistaddbtn) { listAdd(d.mlistaddbtn, document.getElementById('mlistadd').value); return true; }
+    if (d.mremove) {
+      api.call('apiMediaListRemove', d.mremove).then(function () {
+        var md = M_().raw.media; md.entries = md.entries.filter(function (e) { return e.entry_id !== d.mremove; });
+        dirty(); refresh();
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    var i = d.mbump || d.mfinish || d.mstart ? m.byId[d.mbump || d.mfinish || d.mstart] : ui.drawer ? m.byId[ui.drawer] : null;
+    if (d.mclose !== undefined) { closeDrawer(); return true; }
+    if (!i) return false;
+    if (d.mbump) { bump(i, Number(d.by)); return true; }
+    if (d.mfinish) { finish(i); return true; }
+    if (d.mstart) { save(i, { status: cfg(i.kind).active[0] }, 'Started', true); return true; }
+    if (d.mstatus) { save(i, { status: d.mstatus }, 'Marked ' + d.mstatus, true); return true; }
+    if (d.mrating !== undefined) {
+      var rr = d.mrating === '' ? null : Number(d.mrating);
+      var p = { rating_10: rr };
+      if (rr !== null && phase(i) === 'want') p.status = cfg(i.kind).done[0];
+      save(i, p, rr === null ? 'Rating cleared' : 'Rated ' + rr + '/10', true);
+      return true;
+    }
+    if (d.msaveprog !== undefined) {
+      var pp = { progress: document.getElementById('mprog').value };
+      var tot = document.getElementById('mtotal');
+      if (tot) pp.progress_total = tot.value;
+      save(i, pp, 'Progress saved');
+      return true;
+    }
+    if (d.msavereaction !== undefined) { save(i, { reaction: document.getElementById('mreaction').value }, 'Reaction saved'); return true; }
+    if (d.mfav !== undefined) { save(i, { favourite: !i.favourite }, i.favourite ? 'Unfavourited' : 'Favourited ♥'); return true; }
+    if (d.medit !== undefined) { ui.edit = !ui.edit; renderDrawer(); return true; }
+    if (d.msavedetails !== undefined) {
+      var dp = {};
+      ['title', 'creator', 'year', 'format', 'series', 'series_no', 'started_on', 'finished_on'].forEach(function (f) { dp[f] = document.getElementById('me_' + f).value; });
+      save(i, dp, 'Details saved').then(function (res) { if (res && !res.conflict) { ui.edit = false; renderDrawer(); } });
+      return true;
+    }
+    if (d.mdelete !== undefined) {
+      if (!confirm('Delete ' + i.title + ' for good? Its rating, reaction and list spots go with it.')) return true;
+      api.call('apiMediaDelete', i.item_id).then(function (res) {
+        var md = M_().raw.media;
+        md.items = md.items.filter(function (x) { return x.item_id !== i.item_id; });
+        md.entries = md.entries.filter(function (e) { return res.entries.indexOf(e.entry_id) < 0; });
+        S = null; closeDrawer(); api.render(); api.toast('Deleted ' + i.title, 'ok');
+      }).catch(function (e) { api.toast(e.message, 'bad'); });
+      return true;
+    }
+    if (d.maddtolist !== undefined) { listAdd(document.getElementById('maddlist').value, i.item_id); return true; }
+    if (d.mcover !== undefined) {
+      ui.cover = ui.cover ? null : { q: i.title + (i.creator && i.kind === 'book' ? ' ' + String(i.creator).split(',')[0] : ''), results: null, busy: false };
+      if (ui.cover) coverSearch(i); else renderDrawer();
+      return true;
+    }
+    if (d.mcoversearch !== undefined) { ui.cover.q = document.getElementById('mc_q').value; coverSearch(i); return true; }
+    if (d.mcoverurl !== undefined) { setCover(i, document.getElementById('mc_url').value.trim()); return true; }
+    if (d.mcoverset !== undefined) { setCover(i, d.mcoverset); return true; }
+    return false;
+  }
+  function listAdd(listId, itemId) {
+    if (!listId || !itemId) { api.toast('Pick ' + (listId ? 'something to add' : 'a list') + ' first.', 'bad'); return; }
+    api.call('apiMediaListAdd', listId, itemId, '').then(function (rec) {
+      M_().raw.media.entries.push(rec); dirty(); refresh();
+      var l = model(M_()).lists.filter(function (x) { return x.list_id === listId; })[0];
+      api.toast('Added to ' + (l ? l.name : 'the list'), 'ok');
+    }).catch(function (e) { api.toast(e.message, 'bad'); });
+  }
+  function coverSearch(i) {
+    ui.cover.busy = true; renderDrawer();
+    api.call('apiMediaSearch', i.kind, ui.cover.q, isComic(i) ? 'comic' : 'book').then(function (res) {
+      if (!ui.cover) return;
+      ui.cover.busy = false; ui.cover.results = res; renderDrawer();
+    }).catch(function (e) { if (ui.cover) { ui.cover.busy = false; ui.cover.results = []; renderDrawer(); } api.toast(e.message, 'bad'); });
+  }
+  function setCover(i, url) {
+    save(i, { cover_url: url }, url ? 'Cover swapped 🖼️' : 'Cover removed').then(function (res) { if (res && !res.conflict) { ui.cover = null; renderDrawer(); } });
+  }
+
+  function onInput(ev, a) {
+    api = a;
+    var t = ev.target;
+    if (t.id === 'mlq') {
+      var kind = a.view().split(':')[0];
+      libState(kind).q = t.value;
+      var pos = t.selectionStart;
+      a.render();
+      var again = document.getElementById('mlq'); again.focus(); again.setSelectionRange(pos, pos);
+      return true;
+    }
+    if (t.id === 'madd_q' && ui.add) { ui.add.q = t.value; var b = document.querySelector('[data-maddmanual]'); if (b) b.textContent = 'Can’t find it? Add “' + (t.value || 'it') + '” by hand'; return true; }
+    return false;
+  }
+  function onChange(ev, a) {
+    api = a;
+    if (ev.target.id === 'madd_status' && ui.add) { ui.add.status = ev.target.value; return true; }
+    if (ev.target.id === 'madd_platform' && ui.add) { ui.add.platform = ev.target.value; return true; }
+    var k = ev.target.dataset.mlib;
+    if (!k) return false;
+    libState(a.view().split(':')[0])[k] = ev.target.value;
+    a.render();
+    return true;
+  }
+  function onKey(ev, a) {
+    api = a;
+    if (ev.key === 'Escape') {
+      if (ui.add) { closeAdd(); return true; }
+      if (ui.drawer) { closeDrawer(); return true; }
+      return false;
+    }
+    if (ev.key === 'Enter' && ev.target.id === 'madd_q') { ui.add.q = ev.target.value; runAddSearch(); return true; }
+    if (ev.key === 'Enter' && ev.target.id === 'mc_q' && ui.cover) { ui.cover.q = ev.target.value; coverSearch(model(M_()).byId[ui.drawer]); return true; }
+    if (ev.key === 'Enter' && ev.target.id === 'mnewlist') { var b = document.querySelector('[data-mnewlist]'); if (b) b.click(); return true; }
+    return false;
+  }
+
+  // A cover that won't load (moved, offline) becomes the kind's placeholder instead of a broken image.
+  document.addEventListener('error', function (ev) {
+    var img = ev.target;
+    if (!img || img.tagName !== 'IMG' || !img.classList.contains('mimg') || String(img.getAttribute('src')).indexOf('poster://') === 0) return;
+    var span = document.createElement('span');
+    span.className = img.className;
+    span.textContent = img.getAttribute('data-ph') || '⚰️';
+    img.replaceWith(span);
+  }, true);
+
+  // ------------------------------------------------------------------ what App.html uses
+  function sections(kind) {
+    return KIND[kind] ? KIND[kind].sections.map(function (s) { return { id: kind + ':' + s[0], icon: s[1], label: s[2] }; }) : [];
+  }
+  function counts(M) {
+    var out = { book: 0, tv: 0, game: 0 };
+    ((M.raw.media || {}).items || []).forEach(function (i) { out[i.kind] = (out[i.kind] || 0) + 1; });
+    return out;
+  }
+  function suggest(M, q, n) {
+    var nq = HQ.normalise(q);
+    if (!nq || !(M.raw.media || {}).items) return [];
+    return M.raw.media.items.filter(function (i) { return HQ.normalise(i.title + ' ' + i.creator + ' ' + i.series).indexOf(nq) >= 0; })
+      .sort(function (a, b) { return (HQ.normalise(b.title).indexOf(nq) === 0) - (HQ.normalise(a.title).indexOf(nq) === 0) || a.title.localeCompare(b.title); })
+      .slice(0, n).map(function (i) {
+        return '<div data-item="' + esc(i.item_id) + '">' + cover(i) + '<span class="t">' + esc(i.title) + (i.year ? ' <span class="faint">(' + i.year + ')</span>' : '') + '</span>' + kchip(i.kind) + ' ' + chip(i) + '</div>';
+      });
+  }
+
+  function register() {
+    App.view('hub', { render: function (a) { api = a; return renderHub(a); } });
+    Object.keys(KIND).forEach(function (kind) {
+      App.view(kind + ':overview', { render: function (a) { api = a; return renderOverview(kind); } });
+      App.view(kind + ':library', { render: function (a) { api = a; return renderLibrary(kind); } });
+      App.view(kind + ':lists', { render: function (a) { api = a; return renderLists(kind); } });
+      App.view(kind + ':stats', { render: function (a) { api = a; return renderStats(kind); } });
+    });
+  }
+  api = App.api;
+  register();
+
+  return { sections: sections, counts: counts, suggest: suggest, onClick: onClick, onInput: onInput, onChange: onChange, onKey: onKey,
+    open: openItem, KIND: KIND, MILESTONES: MILESTONES };
+})();
+</script>

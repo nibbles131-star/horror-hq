@@ -585,4 +585,68 @@ assert.deepStrictEqual(CXL.filter(fakeList, 'unwatched', 'order').map(s => s.fil
 assert.deepStrictEqual(CXL.filter(fakeList, '', 'year').map(s => s.film.key), ['D (1970)', 'C (1980)', 'B (1990)', 'A (2000)']);
 assert.deepStrictEqual(CXL.filter(fakeList, 'watched', 'rating').map(s => s.film.key), ['B (1990)', 'A (2000)']);
 
+// Books, TV and games: add, dedupe, status dates, progress, lists, delete; search parsing with faked services.
+const FAKE = {
+  'openlibrary.org': { docs: [{ key: '/works/OL1W', title: 'The Shining', author_name: ['Stephen King'], first_publish_year: 1977, cover_i: 42, number_of_pages_median: 447, subject: ['Horror tales'] },
+    { key: '/works/OL2W', title: 'Saga, Volume 1', author_name: ['Brian K. Vaughan'], first_publish_year: 2012, subject: ['Comic books, strips, etc'] }] },
+  'www.googleapis.com': { items: [{ id: 'g1', volumeInfo: { title: 'The Shining', authors: ['Stephen King'], publishedDate: '2012-06-26', pageCount: 688,
+    imageLinks: { thumbnail: 'http://books.google.com/x?id=g1&edge=curl' } } }, { id: 'g2', volumeInfo: { title: 'Uzumaki', authors: ['Junji Ito'], publishedDate: '2013',
+    categories: ['Comics & Graphic Novels'], imageLinks: { thumbnail: 'http://books.google.com/u' } } }] },
+  'api.tvmaze.com': [{ show: { id: 7, name: 'Midnight Mass', premiered: '2021-09-24', type: 'Scripted', genres: ['Horror'], webChannel: { name: 'Netflix' }, image: { original: 'http://static.tvmaze.com/mm.jpg' } } }],
+  'en.wikipedia.org': { query: { pages: { 9: { pageid: 9, index: 2, title: 'Silent Hill 2 (2024 video game)', description: '2024 video game', thumbnail: { source: 'https://upload.wikimedia.org/sh2r.jpg' } },
+    5: { pageid: 5, index: 1, title: 'Silent Hill 2', description: '2001 video game', thumbnail: { source: 'https://upload.wikimedia.org/sh2.jpg' } } } } }
+};
+const fetched = [];
+ctx.UrlFetchApp = { fetch: (url) => {
+  fetched.push(url);
+  const host = url.split('/')[2];
+  const body = /\/episodes$/.test(url) ? new Array(9).fill({}) : FAKE[host];
+  return { getResponseCode: () => (body ? 200 : 500), getContentText: () => JSON.stringify(body || {}) };
+} };
+ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {}, deleteProperty: () => {} }) };
+const books = run(`apiMediaSearch('book', 'shining', 'book')`);
+assert.deepStrictEqual(books.map(b => b.title), ['The Shining', 'Saga, Volume 1', 'Uzumaki'], 'book results interleave both sources and drop the duplicate');
+assert.strictEqual(books[0].cover, 'https://covers.openlibrary.org/b/id/42-L.jpg');
+assert.strictEqual(books[1].format, 'Graphic novel');
+const comics = run(`apiMediaSearch('book', 'uzumaki', 'comic')`);
+assert.ok(/Comic|Graphic|Manga/.test(comics[0].format), 'comic mode puts comics first');
+assert.ok(comics.find(c => c.title === 'Uzumaki').cover.startsWith('https://'), 'Google covers forced to https');
+const shows = run(`apiMediaSearch('tv', 'midnight mass')`);
+assert.strictEqual(shows[0].source, 'tvmaze', 'no TMDB key falls back to TVmaze');
+assert.strictEqual(shows[0].creator, 'Netflix');
+const games = run(`apiMediaSearch('game', 'silent hill 2')`);
+assert.deepStrictEqual(games.map(g => [g.title, g.year]), [['Silent Hill 2', 2001], ['Silent Hill 2', 2024]], 'games keep Wikipedia order, strip "(video game)"');
+assert.ok(fetched.some(u => u.includes('hastemplate')), 'game search sticks to video game articles');
+
+const add1 = run(`apiMediaAdd('book', ${JSON.stringify(books[0])}, 'Want to read')`);
+assert.ok(add1.created && add1.item.item_id === 'M00001' && add1.item.progress_total === 447);
+assert.strictEqual(run(`apiMediaAdd('book', ${JSON.stringify(books[0])}, 'Read')`).created, false, 'same source id is a duplicate');
+assert.strictEqual(run(`apiMediaAdd('book', {title: 'the shining', year: 1977}, 'Read')`).created, false, 'same title and year is a duplicate');
+const show = run(`apiMediaAdd('tv', ${JSON.stringify(shows[0])}, 'Watching')`).item;
+assert.strictEqual(show.progress_total, 9, 'TVmaze episode count comes along');
+assert.ok(show.started_on, 'adding as Watching stamps the start');
+const bk = add1.item.item_id;
+let sv = run(`apiMediaSave('${bk}', {status: 'Reading', progress: 100}, 1)`);
+assert.ok(!sv.conflict && sv.item.started_on && !sv.item.finished_on && sv.item.progress === 100);
+assert.strictEqual(run(`apiMediaSave('${bk}', {progress: 5}, 1)`).conflict, true, 'stale version refused');
+sv = run(`apiMediaSave('${bk}', {status: 'Read', rating_10: 9}, 2)`);
+assert.ok(sv.item.finished_on && sv.item.progress === 447 && sv.item.rating_10 === 9, 'finishing stamps the day and fills progress');
+assert.throws(() => run(`apiMediaSave('${bk}', {status: 'Beaten'})`), /Unknown status/);
+assert.throws(() => run(`apiMediaSave('${bk}', {rating_10: 11})`), /1 to 10/);
+assert.throws(() => run(`apiMediaSave('${bk}', {cover_url: 'javascript:alert(1)'})`), /https/);
+const game = run(`apiMediaAdd('game', ${JSON.stringify(games[0])}, 'Backlog')`).item;
+const gl = run(`apiMediaListSave('', 'game', 'Fog and dread', '🌫️', '')`);
+assert.throws(() => run(`apiMediaListAdd('${gl.list_id}', '${bk}')`), /different shelf/);
+const ge = run(`apiMediaListAdd('${gl.list_id}', '${game.item_id}', '')`);
+const g2 = run(`apiMediaAdd('game', {title: 'Signalis', year: 2022}, 'Playing')`).item;
+assert.strictEqual(g2.format, '', 'games start without a platform');
+assert.strictEqual(run(`apiMediaAdd('book', {title: 'Hellblazer #1', format: 'Comic', total: 32}, 'Reading')`).item.progress_total, null, 'single comics count issues, not pages');
+const ge2 = run(`apiMediaListAdd('${gl.list_id}', '${g2.item_id}', '')`);
+assert.deepStrictEqual(run(`apiMediaListMove('${ge2.entry_id}', 0)`), [ge2.entry_id, ge.entry_id]);
+run(`apiMediaDelete('${game.item_id}')`);
+const mb = run('apiBootstrap()').media;
+assert.deepStrictEqual([mb.items.length, mb.lists.length, mb.entries.length], [4, 1, 1], 'delete takes the item off its lists');
+assert.deepStrictEqual(mb.kinds.game.done, ['Beaten', '100%']);
+assert.ok(run('apiExportAll()').tables.MediaItems.length === 4, 'media rides along in the export');
+
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

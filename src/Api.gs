@@ -69,6 +69,7 @@ function apiBootstrap() {
     criteria: dbRead('ChallengeCriteria').map(stripRow_),
     assignments: dbRead('ChallengeAssignments').map(stripRow_),
     openExceptions: openExceptions,
+    media: mediaBootstrap_(),
     posters: getSetting('poster_provider', null),
     fun: { hall_of_fame: getSetting('hall_of_fame', []), bingo_card: getSetting('bingo_card', null), trophies_seen: getSetting('trophies_seen', null),
       franchise_branches: getSetting('franchise_branches', {}), franchises_done: getSetting('franchises_done', null) },
