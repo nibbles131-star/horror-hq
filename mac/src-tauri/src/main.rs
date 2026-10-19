@@ -4,6 +4,8 @@
 // and does the few things a web page can't: saving downloads, spreadsheet export, Finder and links.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updater;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::http::{Request, Response};
@@ -135,6 +137,12 @@ fn reveal(path: String) -> Result<(), String> {
         cmd.arg(Path::new(&path).parent().unwrap_or(Path::new("/")));
     }
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// This build's number (the workflow run that made it); 0 for a local build.
+#[tauri::command]
+fn app_build() -> u64 {
+    updater::current_build()
 }
 
 /// Opens a web link in the default browser (links can't open new windows inside the app).
@@ -272,19 +280,22 @@ fn main() {
             // The standard Mac menus, plus "Import a Fresh Copy…" under Horror HQ.
             let menu = Menu::default(app.handle())?;
             let fresh = MenuItem::with_id(app, "import-fresh", "Import a Fresh Copy…", true, None::<&str>)?;
+            let updates = MenuItem::with_id(app, "check-updates", "Check for Updates…", true, None::<&str>)?;
             if let Some(first) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
                 first.insert(&PredefinedMenuItem::separator(app)?, 1)?;
-                first.insert(&fresh, 2)?;
+                first.insert(&updates, 2)?;
+                first.insert(&fresh, 3)?;
             }
             app.set_menu(menu)?;
             Ok(())
         })
         .on_menu_event(|app, event| {
-            if event.id() == "import-fresh" {
-                let _ = app.emit("import-fresh", ());
+            let id = event.id().as_ref();
+            if id == "import-fresh" || id == "check-updates" {
+                let _ = app.emit(id, ());
             }
         })
-        .invoke_handler(tauri::generate_handler![load_data, save_data, data_path, backup_now, save_download, export_xlsx, reveal, open_url])
+        .invoke_handler(tauri::generate_handler![load_data, save_data, data_path, backup_now, save_download, export_xlsx, reveal, open_url, app_build, updater::check_update, updater::install_update])
         .run(tauri::generate_context!())
         .expect("error while running Horror HQ");
 }

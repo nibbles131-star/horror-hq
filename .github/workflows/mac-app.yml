@@ -44,6 +44,8 @@ jobs:
         run: node build_web.js
 
       - name: Build the app and .dmg
+        env:
+          HQ_BUILD: ${{ github.run_number }}  # the app compares this with newer mac-build-N releases to update itself
         run: npx tauri build --target universal-apple-darwin
 
       - name: Publish as a pre-release

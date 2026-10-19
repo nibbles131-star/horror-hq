@@ -1,6 +1,6 @@
 [package]
 name = "horror-hq"
-version = "0.3.0"
+version = "0.4.0"
 description = "Horror HQ"
 edition = "2021"
 
@@ -9,10 +9,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-ureq = "3"
+ureq = { version = "3", features = ["json"] }
 base64 = "0.22"
 serde_json = "1"
 rust_xlsxwriter = "0.99"
+sha2 = "0.10"
 
 [profile.release]
 strip = true

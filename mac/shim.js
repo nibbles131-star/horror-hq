@@ -89,10 +89,44 @@ var HQMac = (function () {
         if (err) return showImport({ problem: 'Your data file could not be opened: ' + err.message });
         opened = true;
         readyResolve();
+        setTimeout(function () { checkForUpdate(false); }, 4000);
       });
     }).catch(function (e) { showImport({ problem: 'Could not read your data file: ' + e }); });
     var ev = window.__TAURI__ && window.__TAURI__.event;
-    if (ev) ev.listen('import-fresh', function () { if (opened && !document.querySelector('.mac-import')) showImport({ fresh: true }); });
+    if (ev) {
+      ev.listen('import-fresh', function () { if (opened && !document.querySelector('.mac-import')) showImport({ fresh: true }); });
+      ev.listen('check-updates', function () { checkForUpdate(true); });
+    }
+  }
+
+  // ------------------------------------------------------------------ updates
+  /** Looks for a newer build on GitHub. Quiet at startup; says what it found when asked from the menu. */
+  function checkForUpdate(asked) {
+    if (!tauri()) return;
+    tauri().invoke('check_update').then(function (u) {
+      if (u) return offerUpdate(u);
+      if (asked) tauri().invoke('app_build').then(function (b) { toast("You're on the newest Horror HQ" + (b ? ' (build ' + b + ')' : '') + '. 💀', 'ok'); });
+    }).catch(function (e) { if (asked) toast(String(e), 'bad', 8000); });
+  }
+
+  function offerUpdate(u) {
+    if (document.querySelector('.mac-update')) return;
+    var el = document.createElement('div');
+    el.className = 'mac-update';
+    el.innerHTML = '<b>A new Horror HQ has risen</b><span>Build ' + Number(u.build) + ' is ready. It takes a few seconds and the app reopens by itself.</span>' +
+      '<div><button class="btn primary" data-go>Install &amp; restart</button><button class="btn ghost" data-later>Later</button></div>';
+    document.body.appendChild(el);
+    el.querySelector('[data-later]').onclick = function () { el.remove(); };
+    el.querySelector('[data-go]').onclick = function () {
+      el.innerHTML = '<b>Installing…</b><span>Downloading build ' + Number(u.build) + '. Horror HQ will close and reopen by itself.</span>';
+      // Let any save in flight finish before the app closes.
+      saving.then(function () {
+        return tauri().invoke('install_update', { url: u.url, digest: u.digest || null });
+      }).catch(function (e) {
+        el.remove();
+        toast("The update didn't install: " + e, 'bad', 12000);
+      });
+    };
   }
 
   // ------------------------------------------------------------------ import screen

@@ -11,3 +11,10 @@
 .mac-pick { display: block; text-align: center; margin: 22px auto 10px; cursor: pointer; font-size: 16px; padding: 12px 18px; }
 .mac-small { font-size: 12px; opacity: .65; text-align: center; }
 .mac-bad { background: rgba(255, 0, 0, .14); border: 1px solid rgba(255, 60, 60, .5); padding: 10px 12px; border-radius: 8px; }
+
+/* "New version" card, bottom-left so it never covers the toasts. */
+.mac-update { position: fixed; left: 260px; bottom: 22px; z-index: 9000; width: 340px; display: flex; flex-direction: column; gap: 8px;
+  background: rgba(24, 6, 8, .97); border: 1px solid rgba(255, 40, 40, .5); border-radius: 14px; padding: 16px 18px;
+  box-shadow: 0 0 40px rgba(255, 0, 0, .25); color: #f3e9e4; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45; }
+.mac-update b { font-family: Creepster, Impact, sans-serif; font-weight: 400; color: #ff2b2b; font-size: 22px; letter-spacing: 1px; }
+.mac-update div { display: flex; gap: 8px; margin-top: 4px; }

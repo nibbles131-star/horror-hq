@@ -17,11 +17,16 @@ file in `~/Documents/Horror HQ/Horror HQ Data.json` instead of the Google Sheet.
   `Documents/Horror HQ/Backups`, last 14 kept), the `poster://` cache in the app's cache folder,
   and the menu item.
 
-Stages 3+4 (current): every section is open. The Mac stands in where an app window differs from a
+Stages 3+4: every section is open. The Mac stands in where an app window differs from a
 browser: `<a download>` saves into Downloads (`save_download`), web links open in the default browser
 (`open_url`), and Admin › Backup & export asks `HQMac.backupPanel()` for a Mac version (snapshot into
 Backups, Show in Finder, `.xlsx` export via `export_xlsx`) instead of the Drive one. That `window.HQMac`
 check in ViewAdmin.html is the only Mac-specific line in `src/`.
+
+Stage 5: self-updates (`src-tauri/src/updater.rs`). The workflow bakes `HQ_BUILD` (its run number) into
+the binary; at start-up, and from Horror HQ › Check for Updates…, the app asks the GitHub releases API for a
+newer `mac-build-N` with a `Horror-HQ.dmg`, downloads it (checked against GitHub's sha256 digest), copies
+the app out of the mounted .dmg over itself and reopens. This needs the repo to stay public.
 
 Build: push a change under `mac/` and the "Mac app" workflow publishes `Horror-HQ.dmg` as a
 pre-release. Locally: `npm ci && npm run build` (needs Rust; on Linux, libwebkit2gtk-4.1-dev).
