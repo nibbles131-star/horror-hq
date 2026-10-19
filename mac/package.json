@@ -1,7 +1,7 @@
 {
   "name": "horror-hq-mac",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Horror HQ as a Mac app: the same screens as the Apps Script web app, running on a data file in Documents.",
   "scripts": {
     "web": "node build_web.js",

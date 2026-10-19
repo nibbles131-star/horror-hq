@@ -140,7 +140,7 @@ var HQMac = (function () {
       (o.problem ? '<p class="mac-bad">' + esc(o.problem) + '</p>' : '') +
       (o.fresh
         ? '<p>This swaps everything in the Mac app for a new copy from the Google version. Changes you made only in the Mac app ' +
-          'will be replaced. Today\'s copy is kept in Documents › Horror HQ › Backups first, and your TMDB key stays.</p>'
+          'will be replaced, but your current copy is saved into Documents › Horror HQ › Backups first, and your TMDB key stays.</p>'
         : '<p>Let\'s bring your films over from the Google version. Nothing there changes, it just gets copied.</p>') +
       '<ol>' +
       '<li>Open Horror HQ in your browser the usual way.</li>' +
@@ -159,7 +159,18 @@ var HQMac = (function () {
       if (!file) return;
       var reader = new FileReader();
       reader.onload = function () {
-        openText(String(reader.result), 'import', function (err, films) {
+        // A fresh copy replaces what's here, so snapshot the current Mac copy into Backups first.
+        var before = opened ? snapshot().then(function (json) {
+          return tauri().invoke('backup_now', { json: json, stamp: stamp() + ' before fresh copy' });
+        }) : Promise.resolve();
+        before.then(function () { importText(String(reader.result)); })
+          .catch(function (e) { alarm(el, "Couldn't save a backup of your current copy first, so nothing was replaced: " + e); });
+      };
+      reader.readAsText(file);
+    });
+
+    function importText(text) {
+        openText(text, 'import', function (err, films) {
           if (err) return alarm(el, err.message);
           saving.then(function () {
             if (saveTrouble) return alarm(el, 'The copy was read but could not be saved to Documents › Horror HQ. Check the Mac allowed access, then try again.');
@@ -170,9 +181,7 @@ var HQMac = (function () {
             toast('Imported ' + films + ' films. Welcome home. 💀', 'ok');
           });
         });
-      };
-      reader.readAsText(file);
-    });
+    }
   }
 
   function esc(s) { return String(s).replace(/[<&>]/g, function (c) { return { '<': '&lt;', '&': '&amp;', '>': '&gt;' }[c]; }); }

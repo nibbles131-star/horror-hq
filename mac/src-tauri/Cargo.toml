@@ -1,6 +1,6 @@
 [package]
 name = "horror-hq"
-version = "0.4.0"
+version = "0.4.1"
 description = "Horror HQ"
 edition = "2021"
 
