@@ -594,7 +594,7 @@ const FAKE = {
     categories: ['Comics & Graphic Novels'], imageLinks: { thumbnail: 'http://books.google.com/u' } } }] },
   'api.tvmaze.com': [{ show: { id: 7, name: 'Midnight Mass', premiered: '2021-09-24', type: 'Scripted', genres: ['Horror'], webChannel: { name: 'Netflix' }, image: { original: 'http://static.tvmaze.com/mm.jpg' } } }],
   'en.wikipedia.org': { query: { pages: { 9: { pageid: 9, index: 2, title: 'Silent Hill 2 (2024 video game)', description: '2024 video game', thumbnail: { source: 'https://upload.wikimedia.org/sh2r.jpg' } },
-    5: { pageid: 5, index: 1, title: 'Silent Hill 2', description: '2001 video game', thumbnail: { source: 'https://upload.wikimedia.org/sh2.jpg' } } } } }
+    5: { pageid: 5, index: 1, title: 'Silent Hill 2', description: '2001 survival horror video game', thumbnail: { source: 'https://upload.wikimedia.org/sh2.jpg' } } } } }
 };
 const fetched = [];
 ctx.UrlFetchApp = { fetch: (url) => {
@@ -674,8 +674,8 @@ ctx.UrlFetchApp = { fetch: (url) => {
     body = /wdt:P648 "OL1W"/.test(q) ? WD.byOl : /BIND\("adaptation"/.test(q) ? WD.near : { results: { bindings: [] } };
   } else if (host === 'en.wikipedia.org' && /morelike/.test(decodeURIComponent(url))) {
     body = { query: { pages: { 11: { pageid: 11, index: 1, title: 'Signalis', description: '2022 video game' },
-      12: { pageid: 12, index: 2, title: 'Fatal Frame (video game)', description: '2001 video game', thumbnail: { source: 'https://upload.wikimedia.org/ff.jpg' } },
-      13: { pageid: 13, index: 3, title: 'Rule of Rose', description: '2006 video game' } } } };
+      12: { pageid: 12, index: 2, title: 'Fatal Frame (video game)', description: '2001 survival horror video game', thumbnail: { source: 'https://upload.wikimedia.org/ff.jpg' } },
+      13: { pageid: 13, index: 3, title: 'Rule of Rose', description: '2006 psychological horror video game' } } } };
   } else if (host === 'en.wikipedia.org') {
     body = { query: { normalized: [], pages: { 1: { title: 'The Shining (film)', thumbnail: { source: 'https://upload.wikimedia.org/shining.jpg' } } } } };
   }
@@ -732,6 +732,17 @@ run(`apiDismiss('wp:12', 'Fatal Frame', 'oracle')`);
 assert.deepStrictEqual(run(`apiOracle(['item:${g2.item_id}'])`).items.map(x => x.title), ['Rule of Rose'], '"Not for me" sticks');
 run(`apiUndismiss('wp:12')`);
 assert.strictEqual(run(`apiOracle(['item:${g2.item_id}'])`).items.length, 2);
+// "Not for me" teaches it: one pass is a shrug, two on the same flavour pushes that flavour down.
+assert.deepStrictEqual(orc.items[0].tags, ['s:survival horror']);
+run(`apiDismiss('wp:901', 'Some Game', 'oracle|s:survival horror')`);
+assert.deepStrictEqual(run(`apiOracle(['item:${g2.item_id}'])`).items.map(x => x.title), ['Fatal Frame', 'Rule of Rose'], 'one pass changes nothing');
+run(`apiDismiss('wp:902', 'Another Game', 'oracle|s:survival horror;g:comedy')`);
+const taught = run(`apiOracle(['item:${g2.item_id}'])`);
+assert.deepStrictEqual(taught.items.map(x => x.title), ['Rule of Rose', 'Fatal Frame'], 'two passes on survival horror push it down');
+assert.deepStrictEqual(taught.learned.map(l => l.text), ['less survival horror']);
+assert.deepStrictEqual(run(`oracleGameTags_('2001 video game')`), []);
+run(`apiUndismiss('wp:901')`); run(`apiUndismiss('wp:902')`);
+assert.deepStrictEqual(run(`apiOracle(['item:${g2.item_id}'])`).learned, []);
 const ex = run('apiExportAll()').tables;
 assert.ok(ex.WebLinks.length === 2 && ex.WebNodes.length >= 2 && ex.Dismissals.length === 1, 'the Web rides along in the export');
 
@@ -746,6 +757,61 @@ assert.deepStrictEqual(atc.map(c => [c.name, c.films.length, c.watched, c.onMap]
   'USA and United States on one film count once');
 assert.strictEqual(atc[0].avg, 7);
 assert.deepStrictEqual([AT.level(atc[2], 2), AT.level(atc[0], 2), AT.level(null, 2)], ['todo', 'l5', 'none']);
+const atMine = AT.countries({ films: atFilms, raw: { fun: { atlas_aliases: { narnia: 'New Zealand', usa: 'Canada', japan: 'Atlantis' } } } });
+assert.deepStrictEqual(atMine.map(c => [c.name, c.films.length, c.onMap]), [['United States', 2, true], ['Canada', 1, true], ['New Zealand', 1, true], ['Japan', 1, true]],
+  'your own "this means" fixes win over the built-in spellings, and a fix pointing nowhere is ignored');
+assert.ok(AT.names().indexOf('New Zealand') > 0 && AT.names().length > 200);
 assert.ok(Object.keys(AT.MAP.paths).length > 170 && AT.MAP.dots['Hong Kong'], 'the map has every country, small ones as dots');
+
+// Watch dates: stamped on becoming Watched, dropped on leaving it, editable, never in the future.
+const today = run('mediaToday_()');
+const wd = key('Fanatic (1965)');
+const wdV = run('apiBootstrap()').state[wd.id];
+assert.strictEqual(run('apiBootstrap()').watched[wd.id], undefined);
+let wr = run(`apiSaveFilmState('${wd.id}', {viewing_status: '${wdV[0] === 'Watched' ? 'Not watched' : 'Watched'}'}, ${wdV[3]})`);
+if (wdV[0] === 'Watched') wr = run(`apiSaveFilmState('${wd.id}', {viewing_status: 'Watched'}, ${wr.state.version})`);
+assert.strictEqual(wr.watched_on, today, 'marking Watched stamps today');
+assert.strictEqual(run('apiBootstrap()').watched[wd.id], today);
+wr = run(`apiSaveFilmState('${wd.id}', {rating_10: 7}, ${wr.state.version})`);
+assert.strictEqual(wr.watched_on, today, 'rating a film leaves its date alone');
+assert.strictEqual(run(`apiSetWatchedOn('${wd.id}', '2026-10-31')`).watched_on, '2026-10-31');
+assert.throws(() => vm.runInContext(`apiSetWatchedOn('${wd.id}', '31/10/2026')`, ctx), /2026-10-31/);
+assert.throws(() => vm.runInContext(`apiSetWatchedOn('${wd.id}', '2999-01-01')`, ctx), /hasn't happened/);
+wr = run(`apiSaveFilmState('${wd.id}', {viewing_status: 'DNF'}, ${wr.state.version})`);
+assert.strictEqual(wr.watched_on, '', 'leaving Watched drops the date');
+wr = run(`apiSaveFilmState('${wd.id}', {viewing_status: 'Watched'}, ${wr.state.version})`);
+assert.strictEqual(run(`apiSetWatchedOn('${wd.id}', '')`).watched_on, '');
+assert.strictEqual(run('apiBootstrap()').watched[wd.id], undefined);
+assert.strictEqual(run(`apiBootstrap()`).watched[newFilm], today, 'a film adopted as Watched is dated too');
+assert.ok(run('apiExportAll()').tables.FilmDates.length >= 1, 'dates ride along in the export');
+assert.deepStrictEqual(run(`apiSaveUiSetting('atlas_aliases', {narnia: 'New Zealand'})`), { narnia: 'New Zealand' });
+assert.deepStrictEqual(run('apiBootstrap()').fun.atlas_aliases, { narnia: 'New Zealand' });
+
+// Horror Wrapped: the diary, the year's numbers and the weekly streak.
+const WL = new Function(fs.readFileSync(path.join(SRC, 'ViewWrapped.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1] + '; return WrappedLogic;')();
+const wM = { films: [
+    { id: 'F1', title: 'A', year: 1980, status: 'Watched', watchedOn: '2026-11-02', rating: 9, countries: ['Italy'] },
+    { id: 'F2', title: 'B', year: 1931, status: 'Watched', watchedOn: '2026-11-03', rating: 4, countries: ['Italy', 'Spain'] },
+    { id: 'F3', title: 'C', year: 2001, status: 'Watched', watchedOn: '', rating: 8, countries: [] },
+    { id: 'F4', title: 'D', year: 2002, status: 'DNF', watchedOn: '2026-11-03', rating: null, countries: [] },
+    { id: 'F5', title: 'E', year: 2020, status: 'Watched', watchedOn: '2025-12-30', rating: 6, countries: ['Japan'] }],
+  raw: { media: { kinds: { book: { done: ['Read'] }, game: { done: ['Beaten', 'Completed'] } }, items: [
+    { item_id: 'M1', kind: 'book', title: 'Bk', year: 1977, status: 'Read', finished_on: '2026-11-03', rating_10: 10, format: 'Novel' },
+    { item_id: 'M2', kind: 'game', title: 'Gm', year: 2022, status: 'Playing', finished_on: '', rating_10: null },
+    { item_id: 'M3', kind: 'game', title: 'Gz', year: 2005, status: 'Beaten', finished_on: '2026-10-20', rating_10: null }] } } };
+const wEv = WL.events(wM);
+assert.deepStrictEqual(wEv.map(e => e.key), ['film:F5', 'item:M3', 'film:F1', 'film:F2', 'item:M1'], 'only finished things with a date, oldest first');
+assert.deepStrictEqual(WL.years(wEv), ['2026', '2025']);
+const w26 = WL.summary(wEv, '2026');
+assert.deepStrictEqual([w26.total, w26.byKind.film, w26.byKind.book, w26.byKind.game, w26.days], [4, 2, 1, 1, 3]);
+assert.deepStrictEqual([w26.months[9].total, w26.months[10].total, w26.months[10].film, w26.busiestMonth], [1, 3, 2, 10]);
+assert.deepStrictEqual([w26.busiestDay.key, w26.busiestDay.count, w26.longestRun], ['2026-11-03', 2, 2]);
+assert.deepStrictEqual([w26.best[0].title, w26.worst.title, w26.avg, w26.country.key, w26.oldest.title], ['Bk', 'B', 7.7, 'Italy', 'B']);
+assert.strictEqual(WL.summary(wEv, null).total, 5);
+// 2 Nov 2026 is a Monday. Weeks: 19-25 Oct (Gz), 26 Oct-1 Nov (nothing), 2-8 Nov (three kills).
+assert.deepStrictEqual(WL.streak(wEv, '2026-11-08'), { weeks: 1, fedThisWeek: true });
+assert.deepStrictEqual(WL.streak(wEv, '2026-11-10'), { weeks: 1, fedThisWeek: false }, 'an empty current week does not break the streak yet');
+assert.deepStrictEqual(WL.streak(wEv, '2026-11-17'), { weeks: 0, fedThisWeek: false });
+assert.deepStrictEqual(WL.streak(wEv.concat([{ date: '2026-10-28' }]), '2026-11-04'), { weeks: 3, fedThisWeek: true });
 
 console.log(`OK: app layer: ${M.films.length} films loaded, headline avg ${h.avg}, ${audit.length} audited writes, bootstrap ${raw.loadMs}ms.`);

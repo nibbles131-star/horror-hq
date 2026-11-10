@@ -51,12 +51,51 @@ var HQMac = (function () {
   function save(json) {
     saving = saving.then(function () {
       return tauri().invoke('save_data', { json: json, day: today() }).then(function () {
+        offsiteSoon();
         if (saveTrouble) { saveTrouble = false; toast('Saving works again. Everything is on disk. 💾', 'ok'); }
       });
     }).catch(function (e) {
       saveTrouble = true;
       toast("Couldn't save to Documents › Horror HQ: " + e + '. Your change is still on screen; keep the app open and try again.', 'bad', 12000);
     });
+  }
+
+  // ------------------------------------------------------------------ the copy in iCloud Drive
+  var offsiteTimer = null;
+  var offsiteWarned = false;
+  /** Copies the data file to iCloud Drive once changes have settled for half a minute (and at most that often). */
+  function offsiteSoon() {
+    clearTimeout(offsiteTimer);
+    offsiteTimer = setTimeout(offsiteNow, 30000);
+  }
+  function offsiteNow() {
+    clearTimeout(offsiteTimer);
+    offsiteTimer = null;
+    if (!tauri()) return Promise.resolve(null);
+    return saving.then(function () { return tauri().invoke('offsite_backup', { day: today() }); }).then(function (s) {
+      offsiteWarned = false;
+      return s;
+    }).catch(function (e) {
+      // Never in the way of the real save: say it once, then stay quiet until it works again.
+      if (!offsiteWarned) { offsiteWarned = true; toast("Couldn't copy today's backup to iCloud Drive: " + e + '. Your Mac copy is safe.', 'bad', 9000); }
+      return null;
+    });
+  }
+  function offsiteLine(s) {
+    if (!s) return 'Could not check iCloud Drive just now.';
+    if (!s.available) return 'iCloud Drive is not switched on for this Mac, so there is no off-Mac copy yet. Turn it on in System Settings › your name › iCloud › iCloud Drive and the copies start by themselves.';
+    var day = s.latest ? String(s.latest).replace(/^Horror HQ Data /, '').replace(/\.json$/, '') : '';
+    return s.copies ? 'Working. Newest copy: ' + day + ' · ' + s.copies + ' day' + (s.copies === 1 ? '' : 's') + ' kept in iCloud Drive › Horror HQ Backups.'
+      : 'Ready. The first copy lands in iCloud Drive › Horror HQ Backups half a minute after your next change.';
+  }
+  function showOffsite() {
+    var el = document.getElementById('macoffsite');
+    if (!el || !tauri()) return;
+    tauri().invoke('offsite_status').then(function (s) {
+      el.textContent = offsiteLine(s);
+      var b = document.querySelector('[data-macoffsite]');
+      if (b) b.hidden = !s.available;
+    }).catch(function () { el.textContent = offsiteLine(null); });
   }
 
   // ------------------------------------------------------------------ google.script.run
@@ -90,6 +129,8 @@ var HQMac = (function () {
         opened = true;
         readyResolve();
         setTimeout(function () { checkForUpdate(false); }, 4000);
+        // Catches a change made in the last half minute before the app was quit.
+        setTimeout(offsiteNow, 8000);
       });
     }).catch(function (e) { showImport({ problem: 'Could not read your data file: ' + e }); });
     var ev = window.__TAURI__ && window.__TAURI__.event;
@@ -206,7 +247,20 @@ var HQMac = (function () {
   var TMDB = 'https://image.tmdb.org/t/p/';
   /** https://image.tmdb.org/t/p/w342/abc.jpg -> poster://localhost/w342/abc.jpg (served by the app, cached on disk). */
   function poster(url) {
-    return url && url.indexOf(TMDB) === 0 ? 'poster://localhost/' + url.slice(TMDB.length) : url;
+    if (!url) return url;
+    if (url.indexOf(TMDB) === 0) return 'poster://localhost/' + url.slice(TMDB.length);
+    // Every other cover (books, games, shows) is cached too, under its whole address in hex.
+    if (/^https:\/\//.test(url)) return 'poster://localhost/ext/' + hex(url);
+    return url;
+  }
+  function unhex(h) {
+    if (!h || h.length % 2 || /[^0-9a-f]/.test(h)) return '';
+    var bytes = new Uint8Array(h.length / 2);
+    for (var i = 0; i < bytes.length; i++) bytes[i] = parseInt(h.substr(i * 2, 2), 16);
+    try { var url = new TextDecoder().decode(bytes); return /^https:\/\//.test(url) ? url : ''; } catch (e) { return ''; }
+  }
+  function hex(text) {
+    return Array.prototype.map.call(new TextEncoder().encode(text), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
   }
   // Catches poster URLs that skip HQ.posterUrl (a freshly fetched or swapped poster).
   function watchPosters() {
@@ -216,7 +270,11 @@ var HQMac = (function () {
           if (n.nodeType !== 1) return;
           (n.tagName === 'IMG' ? [n] : Array.prototype.slice.call(n.querySelectorAll('img'))).forEach(function (img) {
             var src = img.getAttribute('src');
-            if (src && src.indexOf(TMDB) === 0) img.setAttribute('src', poster(src));
+            // data-direct marks a cover that already failed through the cache and is loading straight from the web.
+            if (src && /^https:\/\//.test(src) && !img.hasAttribute('data-direct')) {
+              if (src.indexOf(TMDB) !== 0) img.setAttribute('data-web', src);
+              img.setAttribute('src', poster(src));
+            }
           });
         });
       });
@@ -227,10 +285,15 @@ var HQMac = (function () {
   function coffinOnError() {
     document.addEventListener('error', function (ev) {
       var img = ev.target;
-      if (!img || img.tagName !== 'IMG' || String(img.getAttribute('src')).indexOf('poster://') !== 0) return;
+      if (!img || img.tagName !== 'IMG') return;
+      var cached = String(img.getAttribute('src')).indexOf('poster://') === 0, direct = img.hasAttribute('data-direct');
+      if (!cached && !direct) return;
+      // A cover the cache couldn't fetch gets one try straight from its website before giving up.
+      var web = img.getAttribute('data-web') || unhex(String(img.getAttribute('src')).split('poster://localhost/ext/')[1]);
+      if (cached && web && !direct) { img.setAttribute('data-direct', ''); img.setAttribute('src', web); return; }
       var span = document.createElement('span');
       span.className = img.className;
-      span.textContent = '⚰️';
+      span.textContent = img.getAttribute('data-ph') || '⚰️';
       img.replaceWith(span);
     }, true);
   }
@@ -322,21 +385,33 @@ var HQMac = (function () {
   }
 
   function onMacClick(ev) {
-    var b = ev.target.closest && ev.target.closest('[data-macbackup],[data-macxlsx],[data-macfinder]');
+    var b = ev.target.closest && ev.target.closest('[data-macbackup],[data-macxlsx],[data-macfinder],[data-macoffsite]');
     if (!b) return;
-    if (b.hasAttribute('data-macbackup')) backupNow(b);
+    if (b.hasAttribute('data-macoffsite')) {
+      b.disabled = true;
+      offsiteNow().then(function (s) {
+        b.disabled = false;
+        showOffsite();
+        if (s && s.available && s.folder) toastAction('Copied to iCloud Drive', 'Show in Finder', function () { reveal(s.folder + '/' + s.latest); });
+      });
+    }
+    else if (b.hasAttribute('data-macbackup')) backupNow(b);
     else if (b.hasAttribute('data-macxlsx')) exportXlsx(b);
     else showData();
   }
 
   /** Admin > Backup & export on the Mac (ViewAdmin.html asks for this instead of the Google Drive version). */
   function backupPanel() {
+    setTimeout(showOffsite, 0);
     return '<div class="grid g2"><div class="panel"><h2>Snapshot backup</h2><p class="small muted">Saves a dated copy of everything into ' +
         'Documents › Horror HQ › Backups. Snapshots are never cleared out automatically.</p>' +
         '<button class="btn primary" data-macbackup>Back up now</button></div>' +
       '<div class="panel"><h2>Daily backups</h2><p class="small muted">The first time you change anything each day, the previous copy is ' +
         'tucked into the same Backups folder. The last 14 days are kept. Nothing to switch on.</p>' +
         '<button class="btn ghost" data-macfinder>Show in Finder</button></div></div>' +
+      '<div class="panel"><h2>☁️ Off-Mac copy (iCloud Drive)</h2><p class="small muted">If this Mac dies, the backups above die with it. So each day\'s copy also goes ' +
+        'into iCloud Drive, half a minute after you stop changing things, and the last 14 days are kept there too. Your Mac may ask once to let Horror HQ use iCloud Drive: say OK.</p>' +
+        '<p class="small" id="macoffsite">Checking iCloud Drive…</p><button class="btn ghost" data-macoffsite hidden>Copy to iCloud now</button></div>' +
       '<div class="panel"><h2>Export</h2><p class="small muted">Every table, for safekeeping or for poking at. Both land in Downloads.</p>' +
         '<div style="display:flex;gap:8px"><button class="btn" data-macxlsx>Export to spreadsheet (.xlsx)</button>' +
         '<button class="btn ghost" data-adexport>Download JSON</button></div></div>';

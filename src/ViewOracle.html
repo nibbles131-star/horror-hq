@@ -138,6 +138,9 @@ var Oracle = (function () {
             return '<button data-oshow="' + k + '" class="' + (os.show === k ? 'on' : '') + '">' + (k === 'all' ? 'All' : KICON[k] + ' ' + kinds[k]) + '</button>';
           }).join('') + '</div>' : '') + '</div>' +
           (os.data.notes || []).map(function (t) { return '<div class="small muted" style="margin-bottom:8px">' + esc(t) + '</div>'; }).join('') +
+          ((os.data.learned || []).length ? '<div class="small muted" style="margin-bottom:8px">🧠 Learned from your passes: ' + os.data.learned.map(function (l) {
+            return '<span class="chip" title="' + l.passes + ' passes">' + esc(l.text) + '</span>';
+          }).join(' ') + '</div>' : '') +
           (items.length ? '<div class="orc-grid">' + items.map(itemCard).join('') + '</div>' : '<div class="panel empty">The mists are empty. Try different seeds.</div>')
         : !os.busy ? '<div class="panel empty">Press <b>Consult the Oracle</b> and it will read your seeds.</div>' : '');
   }
@@ -196,7 +199,7 @@ var Oracle = (function () {
       var x = byKey(d.oreject);
       os.data.items = os.data.items.filter(function (i) { return i.key !== d.oreject; });
       api.render();
-      api.call('apiDismiss', d.oreject, x ? x.title : '', 'oracle').then(function () {
+      api.call('apiDismiss', d.oreject, x ? x.title : '', 'oracle|' + ((x && x.tags) || []).slice(0, 6).join(';')).then(function () {
         api.toast('The Oracle won\'t show ' + (x ? x.title : 'that') + ' again', 'ok', { label: 'Undo', fn: function () {
           api.call('apiUndismiss', d.oreject).then(function () { if (x) { os.data.items.unshift(x); api.render(); } });
         } });

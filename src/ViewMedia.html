@@ -384,11 +384,13 @@ var Media = (function () {
         '<div class="tally"><div><b>' + totalAll + '</b>horrors logged</div><div><b>' + totalDone + '</b>survived</div><div><b>' + activeAll.length + '</b>in progress</div></div></div>' +
         searchBox() + '</div>' +
       '<div class="portals">' + portals + '</div>' +
+      (window.Wrapped ? Wrapped.hubTiles(a) : '') +
       (activeAll.length ? '<div class="panel" style="margin-bottom:18px"><h2>🩸 Currently haunting you</h2><div class="haunt">' + activeAll.map(function (i) {
         return '<div class="hcard k-' + i.kind + '">' + cover(i, 'mlg') + '<div class="t"><div class="ttl" data-mitem="' + esc(i.item_id) + '">' + esc(i.title) + '</div>' +
           '<div class="small faint">' + kchip(i.kind) + ' ' + esc(progressText(i)) + '</div>' + bar(i) +
           '<div class="bump">' + step(i).map(function (n) { return '<button class="btn" data-mbump="' + esc(i.item_id) + '" data-by="' + n + '">+' + n + '</button>'; }).join('') + '</div></div></div>';
       }).join('') + '</div></div>' : '') +
+      (window.Wrapped ? Wrapped.hubThreads(a) : '') +
       '<div class="grid g2">' +
         '<div class="panel"><h2>🎰 Pick your poison <span class="act muted small">anything unwatched, unread or unplayed</span></h2>' + reel('all') + '</div>' +
         '<div class="panel"><h2>⚰️ Fresh kills</h2>' + coverRow(fresh, 'Finish a book, show or game and it lands here.') + '</div>' +

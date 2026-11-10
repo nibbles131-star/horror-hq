@@ -40,7 +40,7 @@ var HQ = (function () {
       var film = { id: f[0], key: f[1], title: f[2], year: f[3], poster: posterUrl(f[4]),
         status: st[0], rating: st[1], reaction: st[2] || '', version: st[3], modified: st[4],
         countries: (raw.filmCountries[f[0]] || []).map(function (c) { return raw.countries[c]; }),
-        memory: raw.memory[f[0]] || null, special: raw.special[f[0]] || null, aliases: [] };
+        memory: raw.memory[f[0]] || null, special: raw.special[f[0]] || null, aliases: [], watchedOn: (raw.watched || {})[f[0]] || '' };
       film.search = normalise(film.key) + ' ' + film.id.toLowerCase();
       M.films.push(film);
       M.byId[film.id] = film;

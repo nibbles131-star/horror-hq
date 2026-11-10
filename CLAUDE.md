@@ -1,5 +1,9 @@
 # Horror HQ — notes for Claude
 
+- **The Mac app is the live copy (Tommy's call, 10 Nov 2026). The Google Apps Script version is retired:** do not deploy to
+  the Drive folder any more, and never write to either Google workbook. The deploy notes below are history. `src/` is still
+  shared code, so keep it runnable under Apps Script rules (no new columns on old tables: add a table to `LATE_TABLES_`).
+
 - Apps Script web app bound to the "Horror HQ Database" workbook. Old workbook is read-only; never write to it.
 - Run `node tools/run_migration_test.js` after touching Migration/Reconcile/Db/Util.
 - Deploying: `python3 tools/build_bundle.py`, then upload each changed file from `dist/release/` to the Drive

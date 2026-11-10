@@ -1,0 +1,270 @@
+<style>
+  /* ---------------------------------------------------------------- Horror Wrapped + hub extras */
+  .wrhero { position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 18px; padding: 30px 34px; margin-bottom: 18px;
+    background: radial-gradient(520px 260px at 88% 0%, #e3242b55, transparent 70%), radial-gradient(420px 240px at 0% 100%, #6a1fa844, transparent 70%), linear-gradient(160deg, #22070a, #0b0304); }
+  .wrhero .kicker { font-family: var(--type); letter-spacing: 4px; text-transform: uppercase; font-size: 12px; color: var(--muted); }
+  .wrhero h1 { margin: 2px 0 4px; font-family: var(--display); font-weight: 400; font-size: 64px; line-height: .95; letter-spacing: 3px; color: #fff; text-shadow: 0 0 30px #e3242b99, 0 4px 0 #000; }
+  .wrhero h1 span { color: var(--blood2); }
+  .wrhero .big { font-family: var(--display); font-size: 120px; line-height: .9; color: #fff; text-shadow: 0 0 40px #e3242b, 0 6px 0 #000; }
+  .wrhero .bigrow { display: flex; align-items: flex-end; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
+  .wrhero .bigrow .cap { font-family: var(--type); color: var(--muted); padding-bottom: 14px; max-width: 420px; }
+  .wryears { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 16px; }
+  .wryears button { background: #0006; border: 1px solid var(--line2); color: var(--muted); border-radius: 999px; padding: 5px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+  .wryears button.on { background: var(--blood); border-color: var(--blood2); color: #fff; }
+  .wrkinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+  .wrkind { border: 1px solid var(--line2); border-radius: 14px; padding: 16px 18px; background: linear-gradient(170deg, color-mix(in srgb, var(--kc) 16%, #0c0304), #0c0304); }
+  .wrkind b { display: block; font-family: var(--display); font-weight: 400; font-size: 46px; line-height: 1; color: var(--kc); text-shadow: 0 0 18px color-mix(in srgb, var(--kc) 60%, transparent); }
+  .wrkind span { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); font-weight: 700; }
+  .wk-film { --kc: #ff4d55; } .wk-book { --kc: #f0b24f; } .wk-tv { --kc: #6dffa8; } .wk-game { --kc: #c86bff; }
+  .wrmonths { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; align-items: end; height: 190px; padding-top: 8px; }
+  .wrmonths .col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; min-width: 0; }
+  .wrmonths .n { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+  .wrmonths .stack { width: 100%; max-width: 44px; display: flex; flex-direction: column-reverse; gap: 2px; border-radius: 5px 5px 0 0; overflow: hidden; }
+  .wrmonths .seg { background: var(--kc); min-height: 3px; }
+  .wrmonths .m { font-size: 11px; color: var(--faint); letter-spacing: 1px; text-transform: uppercase; }
+  .wrlegend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+  .wrlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--kc); margin-right: 5px; vertical-align: -1px; }
+  .wrfacts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .wrfact { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #0005; }
+  .wrfact .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.6px; color: var(--faint); font-weight: 700; }
+  .wrfact .v { font-family: var(--display); font-size: 26px; color: #fff; line-height: 1.1; margin: 3px 0 2px; }
+  .wrfact .d { font-size: 12px; color: var(--muted); }
+  .wrlog .day { display: flex; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .wrlog .day:last-child { border-bottom: 0; }
+  .wrlog .when { width: 92px; flex: none; font-family: var(--type); font-size: 12px; color: var(--muted); padding-top: 3px; }
+  .wrlog .what { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .wrlog .what span.e { cursor: pointer; }
+  .wrlog .what span.e:hover b { color: var(--blood2); }
+  .beyond { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 22px; }
+  .btile { position: relative; overflow: hidden; display: flex; gap: 14px; align-items: center; cursor: pointer; border: 1px solid var(--line2); border-radius: 14px; padding: 16px 18px;
+    background: linear-gradient(120deg, #1d0709, #0c0304); transition: transform .18s, border-color .18s, box-shadow .18s; }
+  .btile:hover { transform: translateY(-3px); border-color: var(--blood2); box-shadow: 0 16px 40px #000c, 0 0 26px #e3242b44; }
+  .btile .ico { font-size: 34px; filter: drop-shadow(0 0 12px #e3242b88); }
+  .btile .nm { font-family: var(--display); font-size: 24px; letter-spacing: 1px; color: #fff; line-height: 1; }
+  .btile .ds { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .btile .ds b { color: var(--text); }
+  .thread { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .thread:last-child { border-bottom: 0; }
+  .thread .mimg { width: 34px; height: 51px; border-radius: 5px; font-size: 16px; flex: none; }
+  .thread .arrow { color: var(--faint); }
+  .thread .t { flex: 1; min-width: 0; font-size: 13.5px; }
+  .thread:hover .t b:last-of-type { color: var(--blood2); }
+  @media (max-width: 1100px) { .wrkinds { grid-template-columns: repeat(2, 1fr); } .wrfacts { grid-template-columns: repeat(2, 1fr); } .beyond { grid-template-columns: 1fr; } }
+</style>
+<script>
+/*
+ * The diary behind Horror Wrapped: everything with a date on it. Films carry the day they were marked
+ * Watched (kept since build 8; older films have none), books, shows and games the day they were finished.
+ */
+var WrappedLogic = (function () {
+  function dayNum(iso) { var p = String(iso).split('-'); return Math.round(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])) / 86400000); }
+  /** Weeks run Monday to Sunday. */
+  function weekNum(iso) { return Math.floor((dayNum(iso) - 4) / 7); }
+  function isDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')); }
+
+  /** [{date, kind, key, title, year, rating, cover, comic, countries}] oldest first. */
+  function events(M) {
+    var out = [];
+    M.films.forEach(function (f) {
+      if (f.status === 'Watched' && isDate(f.watchedOn)) out.push({ date: f.watchedOn, kind: 'film', key: 'film:' + f.id, title: f.title, year: f.year, rating: f.rating, cover: f.poster || '', countries: f.countries || [] });
+    });
+    var media = M.raw.media || {}, kinds = media.kinds || {};
+    (media.items || []).forEach(function (i) {
+      var k = kinds[i.kind];
+      if (!k || k.done.indexOf(i.status) < 0 || !isDate(i.finished_on)) return;
+      out.push({ date: i.finished_on, kind: i.kind, key: 'item:' + i.item_id, title: i.title, year: i.year, rating: i.rating_10, cover: i.cover_url || '',
+        comic: /Comic|Graphic|Manga/.test(i.format || ''), countries: [] });
+    });
+    return out.sort(function (a, b) { return a.date.localeCompare(b.date) || a.title.localeCompare(b.title); });
+  }
+
+  function years(ev) {
+    var seen = {};
+    ev.forEach(function (e) { seen[e.date.slice(0, 4)] = 1; });
+    return Object.keys(seen).sort().reverse();
+  }
+
+  function top(counts) {
+    var best = null;
+    Object.keys(counts).forEach(function (k) { if (!best || counts[k] > counts[best]) best = k; });
+    return best ? { key: best, count: counts[best] } : null;
+  }
+
+  /** Numbers for one year (or everything when year is falsy). */
+  function summary(ev, year) {
+    var list = year ? ev.filter(function (e) { return e.date.slice(0, 4) === String(year); }) : ev.slice();
+    var s = { total: list.length, byKind: { film: 0, book: 0, tv: 0, game: 0 }, months: [], list: list };
+    for (var m = 0; m < 12; m++) s.months.push({ film: 0, book: 0, tv: 0, game: 0, total: 0 });
+    var perDay = {}, perCountry = {}, rated = [];
+    list.forEach(function (e) {
+      s.byKind[e.kind] = (s.byKind[e.kind] || 0) + 1;
+      var mo = s.months[Number(e.date.slice(5, 7)) - 1];
+      mo[e.kind]++; mo.total++;
+      perDay[e.date] = (perDay[e.date] || 0) + 1;
+      (e.countries || []).forEach(function (c) { perCountry[c] = (perCountry[c] || 0) + 1; });
+      if (e.rating !== null && e.rating !== undefined) rated.push(e);
+    });
+    s.best = rated.slice().sort(function (a, b) { return b.rating - a.rating || b.date.localeCompare(a.date); }).slice(0, 10);
+    s.worst = rated.length > 1 ? rated.slice().sort(function (a, b) { return a.rating - b.rating || a.date.localeCompare(b.date); })[0] : null;
+    s.avg = rated.length ? Math.round(rated.reduce(function (t, e) { return t + e.rating; }, 0) / rated.length * 10) / 10 : null;
+    s.busiestDay = top(perDay);
+    s.country = top(perCountry);
+    var bm = -1;
+    s.months.forEach(function (mo, i) { if (mo.total && (bm < 0 || mo.total > s.months[bm].total)) bm = i; });
+    s.busiestMonth = bm;
+    var days = Object.keys(perDay).map(dayNum).sort(function (a, b) { return a - b; });
+    var run = 0, bestRun = 0;
+    days.forEach(function (d, i) { run = i && d === days[i - 1] + 1 ? run + 1 : 1; if (run > bestRun) bestRun = run; });
+    s.longestRun = bestRun;
+    s.days = days.length;
+    s.oldest = list.filter(function (e) { return e.year; }).sort(function (a, b) { return a.year - b.year; })[0] || null;
+    s.first = list[0] || null;
+    s.last = list[list.length - 1] || null;
+    return s;
+  }
+
+  /** Weeks in a row with at least one kill, counting back from this week (an empty current week doesn't break it yet). */
+  function streak(ev, today) {
+    var weeks = {};
+    ev.forEach(function (e) { weeks[weekNum(e.date)] = 1; });
+    var w = weekNum(today), alive = !!weeks[w], n = 0;
+    if (!alive) w--;
+    while (weeks[w]) { n++; w--; }
+    return { weeks: n, fedThisWeek: alive };
+  }
+
+  return { events: events, years: years, summary: summary, streak: streak, dayNum: dayNum, weekNum: weekNum };
+})();
+</script>
+<script>
+var Wrapped = (function () {
+  var api = App.api;
+  var st = { year: null };
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var KINDS = [['film', 'Films watched', 'Films'], ['book', 'Books & comics read', 'Books & comics'], ['tv', 'Shows finished', 'TV'], ['game', 'Games beaten', 'Games']];
+  var PH = { film: '⚰️', book: '📖', tv: '📺', game: '🎮' };
+  function esc(s) { return api.esc(s); }
+  function img(e) {
+    var src = e.cover ? HQ.posterUrl(e.cover) : '';
+    return src ? '<img class="mimg" loading="lazy" src="' + esc(src) + '" alt="" data-ph="' + PH[e.kind] + '">' : '<span class="mimg">' + PH[e.kind] + '</span>';
+  }
+  function fact(k, v, d) { return '<div class="wrfact"><div class="k">' + esc(k) + '</div><div class="v">' + v + '</div><div class="d">' + d + '</div></div>'; }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+
+  function render(a) {
+    api = a;
+    var M = a.model();
+    var ev = WrappedLogic.events(M);
+    var years = WrappedLogic.years(ev);
+    var thisYear = HQ.isoToday().slice(0, 4);
+    if (st.year === null) st.year = years.indexOf(thisYear) >= 0 ? thisYear : (years[0] || thisYear);
+    var s = WrappedLogic.summary(ev, st.year === 'all' ? null : st.year);
+    var undated = M.films.filter(function (f) { return f.status === 'Watched' && !f.watchedOn; }).length;
+    var tabs = '<div class="wryears">' + years.map(function (y) { return '<button data-wryear="' + y + '" class="' + (st.year === y ? 'on' : '') + '">' + y + '</button>'; }).join('') +
+      (years.length > 1 ? '<button data-wryear="all" class="' + (st.year === 'all' ? 'on' : '') + '">All time</button>' : '') + '</div>';
+    var label = st.year === 'all' ? 'all time' : st.year;
+    var hero = '<div class="wrhero"><div class="kicker">The body count, by date</div><h1>HORROR <span>WRAPPED</span></h1>' +
+      '<div class="bigrow"><div class="big">' + s.total + '</div><div class="cap">' + (s.total === 1 ? 'horror' : 'horrors') + ' survived ' + (st.year === 'all' ? 'since the diary began' : 'in ' + esc(label)) +
+      (s.days ? ', across ' + plural(s.days, 'day') + ' of questionable decisions.' : '.') + '</div></div>' + (years.length ? tabs : '') + '</div>';
+    var note = '<div class="small faint" style="margin-top:14px">' + (ev.length ? 'The diary starts on ' + esc(a.fmtDate(ev[0].date)) + ' ' + ev[0].date.slice(0, 4) + '. ' : '') +
+      (undated ? undated + ' films you watched before dates were kept have none; open one and set “Watched on” if you remember the night.' : '') + '</div>';
+    if (!s.total) {
+      return a.topBar('🩸 Horror Wrapped', 'Your year in horror, once there are dates to count.') + hero +
+        '<div class="panel"><div class="empty">Nothing dated ' + (ev.length ? 'in ' + esc(label) : 'yet') + '. From now on, marking a film Watched stamps the day, and finishing a book, show or game does the same. ' +
+        'Come back after your next kill.</div></div>' + note;
+    }
+    var max = Math.max.apply(null, s.months.map(function (m) { return m.total; })) || 1;
+    var months = '<div class="wrmonths">' + s.months.map(function (m, i) {
+      return '<div class="col" title="' + MONTHS[i] + ': ' + m.total + '"><div class="n">' + (m.total || '') + '</div><div class="stack" style="height:' + Math.round(m.total / max * 130) + 'px">' +
+        KINDS.map(function (k) { return m[k[0]] ? '<div class="seg wk-' + k[0] + '" style="flex:' + m[k[0]] + '"></div>' : ''; }).join('') + '</div><div class="m">' + MONTHS[i] + '</div></div>';
+    }).join('') + '</div><div class="wrlegend">' + KINDS.filter(function (k) { return s.byKind[k[0]]; }).map(function (k) { return '<span class="wk-' + k[0] + '"><i></i>' + k[2] + '</span>'; }).join('') + '</div>';
+    var facts = [];
+    if (s.busiestMonth >= 0) facts.push(fact('Bloodiest month', MONTHS[s.busiestMonth], plural(s.months[s.busiestMonth].total, 'kill')));
+    if (s.busiestDay) facts.push(fact('Biggest binge', esc(a.fmtDate(s.busiestDay.key)), plural(s.busiestDay.count, 'thing') + ' in one day'));
+    if (s.longestRun > 1) facts.push(fact('Longest run', plural(s.longestRun, 'day'), 'in a row with something finished'));
+    if (s.avg !== null) facts.push(fact('Average verdict', s.avg + '/10', s.avg >= 7.5 ? 'A generous executioner.' : s.avg >= 5.5 ? 'Fair. Firm. Slightly haunted.' : 'Nobody is safe from you.'));
+    if (s.worst && s.best[0] && s.worst.rating < s.best[0].rating) facts.push(fact('Harshest sentence', s.worst.rating + '/10', esc(s.worst.title)));
+    if (s.country) facts.push(fact('Most visited', esc(s.country.key), plural(s.country.count, 'film') + ' from there'));
+    if (s.oldest) facts.push(fact('Oldest thing dug up', s.oldest.year, esc(s.oldest.title)));
+    if (s.first && s.total > 1) facts.push(fact('First blood', esc(a.fmtDate(s.first.date)), esc(s.first.title)));
+    var byDay = {}, order = [];
+    s.list.slice().reverse().slice(0, 60).forEach(function (e) { if (!byDay[e.date]) { byDay[e.date] = []; order.push(e.date); } byDay[e.date].push(e); });
+    var log = '<div class="wrlog">' + order.map(function (d) {
+      return '<div class="day"><div class="when">' + esc(a.fmtDate(d)) + '</div><div class="what">' + byDay[d].map(function (e) {
+        return '<span class="e" data-wropen="' + esc(e.key) + '">' + PH[e.kind] + ' <b>' + esc(e.title) + '</b>' + (e.rating !== null && e.rating !== undefined ? ' <span class="faint">' + e.rating + '/10</span>' : '') + '</span>';
+      }).join('') + '</div></div>';
+    }).join('') + '</div>';
+    return a.topBar('🩸 Horror Wrapped', 'Your year in horror, counted by the day you survived each one.') + hero +
+      '<div class="wrkinds">' + KINDS.map(function (k) { return '<div class="wrkind wk-' + k[0] + '"><b>' + (s.byKind[k[0]] || 0) + '</b><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
+      '<div class="panel" style="margin-bottom:18px"><h2>🗓️ Month by month</h2>' + months + '</div>' +
+      (s.best.length ? '<div class="panel" style="margin-bottom:18px"><h2>👑 The best of ' + (st.year === 'all' ? 'the lot' : esc(label)) + '</h2><div class="coverrow">' + s.best.map(function (e) {
+        return '<div class="cv" data-wropen="' + esc(e.key) + '">' + img(e) + '<span class="rt">' + e.rating + '</span><div class="nm">' + esc(e.title) + '</div></div>';
+      }).join('') + '</div></div>' : '') +
+      (facts.length ? '<div class="panel" style="margin-bottom:18px"><h2>🔪 The autopsy</h2><div class="wrfacts">' + facts.join('') + '</div></div>' : '') +
+      '<div class="panel"><h2>📓 The kill log <span class="act muted small">newest first</span></h2>' + log + '</div>' + note;
+  }
+
+  // ------------------------------------------------------------------ hub extras
+  var VERB = { film: 'watched', book: 'read', tv: 'watched', game: 'played' };
+  var NOUN = { film: 'film', book: 'book', tv: 'series', game: 'game' };
+
+  /** Linked pairs where you've finished one side and not the other, best-loved first. */
+  function threads() {
+    var M = api.model();
+    if (!window.Web || !M.raw.web) return [];
+    var seen = {}, out = [];
+    (M.raw.web.links || []).forEach(function (l) {
+      var a = Web.info(l.from_key), b = Web.info(l.to_key);
+      if (!a || !b || (a.phase === 'done') === (b.phase === 'done')) return;
+      var d = a.phase === 'done' ? a : b, w = a.phase === 'done' ? b : a;
+      if (w.phase === 'dropped' || seen[w.key]) return;
+      seen[w.key] = 1;
+      out.push({ done: d, waiting: w });
+    });
+    return out.sort(function (x, y) { return (y.waiting.phase === 'active') - (x.waiting.phase === 'active') || (y.done.rating || 0) - (x.done.rating || 0) || x.waiting.title.localeCompare(y.waiting.title); });
+  }
+  function mini(n) { return n.cover ? '<img class="mimg" loading="lazy" src="' + esc(n.cover) + '" alt="" data-ph="' + n.ph + '">' : '<span class="mimg">' + n.ph + '</span>'; }
+
+  /** The hub's doors to the cross-realm pages, and the loose ends the Adaptation Web knows about. */
+  function hubTiles(a) {
+    api = a;
+    var M = a.model();
+    var links = ((M.raw.web || {}).links || []).length;
+    var websN = window.Web ? Web.webs().length : 0;
+    var ev = WrappedLogic.events(M);
+    var year = HQ.isoToday().slice(0, 4);
+    var n = WrappedLogic.summary(ev, year).total;
+    var sk = WrappedLogic.streak(ev, HQ.isoToday());
+    var faves = M.films.filter(function (f) { return f.rating >= 9; }).length + ((M.raw.media || {}).items || []).filter(function (i) { return i.favourite || i.rating_10 >= 9; }).length;
+    function tile(nav, ico, nm, ds) { return '<div class="btile" data-nav="' + nav + '"><div class="ico">' + ico + '</div><div><div class="nm">' + nm + '</div><div class="ds">' + ds + '</div></div></div>'; }
+    return '<div class="beyond">' +
+      tile('web', '🕸️', 'Adaptation Web', links ? '<b>' + websN + '</b> ' + (websN === 1 ? 'web' : 'webs') + ' · <b>' + links + '</b> ' + (links === 1 ? 'thread' : 'threads') + ' between page, screen and controller' : 'Link a book to its film, a film to its game.') +
+      tile('oracle', '🔮', 'The Oracle', faves ? 'Reading the entrails of your <b>' + faves + '</b> favourites' : 'Rate something 9 or 10 and it starts talking.') +
+      tile('wrapped', '🩸', 'Horror Wrapped', (n ? '<b>' + n + '</b> survived in ' + year : 'Your year, counted by the day') +
+        (sk.weeks > 1 ? ' · 🔥 <b>' + sk.weeks + '</b> weeks running' + (sk.fedThisWeek ? '' : ' (feed it this week)') : '')) +
+      '</div>';
+  }
+  function hubThreads(a) {
+    api = a;
+    var t = threads();
+    if (!t.length) return '';
+    return '<div class="panel" style="margin-bottom:18px"><h2>🧵 Unfinished threads <span class="act muted small">you’ve done one side of the story</span></h2>' + t.slice(0, 6).map(function (x) {
+      return '<div class="thread" data-wropen="' + esc(x.waiting.key) + '">' + mini(x.done) + '<span class="arrow">→</span>' + mini(x.waiting) +
+        '<div class="t">You ' + VERB[x.done.kind] + ' <b>' + esc(x.done.title) + '</b>' + (x.done.year && x.done.title === x.waiting.title ? ' <span class="faint">(' + x.done.year + ')</span>' : '') + (x.done.rating ? ' <span class="faint">(' + x.done.rating + '/10)</span>' : '') + '. The ' + NOUN[x.waiting.kind] + ' <b>' + esc(x.waiting.title) + '</b>' +
+        (x.waiting.year ? ' <span class="faint">(' + x.waiting.year + ')</span>' : '') + (x.waiting.phase === 'active' ? ' is half done.' : ' is still waiting.') + '</div></div>';
+    }).join('') + (t.length > 6 ? '<div class="small faint" style="margin-top:8px">and ' + (t.length - 6) + ' more in the Adaptation Web.</div>' : '') + '</div>';
+  }
+
+  function onClick(ev, a) {
+    api = a;
+    var t = ev.target.closest('[data-wryear],[data-wropen]');
+    if (!t) return false;
+    if (t.dataset.wryear) { st.year = t.dataset.wryear; a.render(); return true; }
+    if (window.Web) Web.openNode(t.dataset.wropen);
+    return true;
+  }
+
+  App.view('wrapped', { render: render });
+  return { onClick: onClick, hubTiles: hubTiles, hubThreads: hubThreads, threads: threads };
+})();
+</script>

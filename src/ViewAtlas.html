@@ -66,21 +66,26 @@ var AtlasLogic = (function () {
   Object.keys(MAP.paths).concat(Object.keys(MAP.dots)).forEach(function (n) { LOWER[n.toLowerCase()] = n; });
 
   /** The map's name for a country as typed, or null when it isn't on the map. */
-  function place(name) {
+  function place(name, custom) {
     var k = String(name || '').trim().toLowerCase();
-    return LOWER[k] || ALIAS[k] || null;
+    // Your own "this means…" fixes win over the built-in spellings.
+    return (custom && custom[k] && LOWER[String(custom[k]).toLowerCase()]) || LOWER[k] || ALIAS[k] || null;
   }
+
+  /** Every name the map can draw, A to Z. */
+  function names() { return Object.keys(LOWER).map(function (k) { return LOWER[k]; }).sort(); }
 
   /** Every country your films come from: {name, onMap, films, watched, rated, avg}, biggest first. */
   function countries(M) {
     var by = {};
+    var custom = ((M.raw || {}).fun || {}).atlas_aliases || {};
     M.films.forEach(function (f) {
       var seen = {};
       f.countries.forEach(function (raw) {
-        var n = place(raw) || String(raw).trim();
+        var n = place(raw, custom) || String(raw).trim();
         if (!n || seen[n]) return;
         seen[n] = 1;
-        var c = by[n] = by[n] || { name: n, onMap: !!place(raw), films: [], watched: 0, sum: 0, rated: 0 };
+        var c = by[n] = by[n] || { name: n, onMap: !!place(raw, custom), films: [], watched: 0, sum: 0, rated: 0 };
         c.films.push(f);
         if (f.status === 'Watched') c.watched++;
         if (f.rating !== null && f.rating !== undefined) { c.sum += f.rating; c.rated++; }
@@ -100,7 +105,7 @@ var AtlasLogic = (function () {
     return 'l' + Math.max(1, Math.min(5, Math.ceil(Math.log(c.watched + 1) / Math.log(max + 1) * 5)));
   }
 
-  return { MAP: MAP, place: place, countries: countries, level: level };
+  return { MAP: MAP, place: place, countries: countries, level: level, names: names };
 })();
 
 (function () {
@@ -126,6 +131,7 @@ var AtlasLogic = (function () {
     var list = L.countries(M);
     var by = {};
     list.forEach(function (c) { by[c.name] = c; });
+    var mine = (M.raw.fun || {}).atlas_aliases || {};
     var onMap = list.filter(function (c) { return c.onMap; });
     var off = list.filter(function (c) { return !c.onMap; });
     var max = Math.max.apply(null, list.map(function (c) { return c.watched; }).concat([1]));
@@ -161,6 +167,8 @@ var AtlasLogic = (function () {
             '<div class="seg">' + [['all', 'All ' + sel.films.length], ['watched', 'Watched ' + sel.watched], ['todo', 'Unwatched ' + (sel.films.length - sel.watched)]].map(function (o) {
               return '<button data-atshow="' + o[0] + '" class="' + (st.show === o[0] ? 'on' : '') + '">' + a.esc(o[1]) + '</button>';
             }).join('') + '</div></div>' +
+            (sel.onMap ? '' : '<div class="toolbar" style="margin:0 0 12px"><span class="small muted">The map doesn\'t know “' + a.esc(sel.name) + '”. It means:</span>' +
+              '<select data-atalias="' + a.esc(sel.name) + '" style="max-width:240px">' + a.options(L.names().map(function (n) { return [n, n]; }), '', 'Pick a country…') + '</select></div>') +
             (films.length ? '<div class="atl-grid">' + films.map(function (f) { return tile(a, f); }).join('') + '</div>'
               : '<div class="empty">' + (st.show === 'watched' ? 'Nothing watched from here yet. Book the trip.' : 'Every film from here is watched. Passport stamped.') + '</div>')
           : '<div class="empty">No films have a country yet. Add countries in the Excavator and they land here.</div>') +
@@ -169,9 +177,12 @@ var AtlasLogic = (function () {
           return '<div class="row' + (st.sel === c.name ? ' on' : '') + '" data-atl="' + a.esc(c.name) + '"><span style="width:118px" class="small">' + a.esc(c.name) + '</span>' +
             '<div class="bar"><i style="width:' + (c.watched / c.films.length * 100) + '%"></i></div><span class="n">' + c.watched + '/' + c.films.length + '</span></div>';
         }).join('') +
-        (off.length ? '<h3 style="margin-top:16px">Off the map</h3><div class="small faint" style="margin-bottom:6px">Spelled in a way the map doesn\'t know, or too small to draw.</div>' + off.map(function (c) {
+        (off.length ? '<h3 style="margin-top:16px">Off the map</h3><div class="small faint" style="margin-bottom:6px">Spelled in a way the map doesn\'t know, or too small to draw. Click one to tell the map what it means.</div>' + off.map(function (c) {
           return '<div class="row' + (st.sel === c.name ? ' on' : '') + '" data-atl="' + a.esc(c.name) + '"><span style="width:118px" class="small">' + a.esc(c.name) + '</span>' +
             '<div class="bar"><i style="width:' + (c.watched / c.films.length * 100) + '%"></i></div><span class="n">' + c.watched + '/' + c.films.length + '</span></div>';
+        }).join('') : '') +
+        (Object.keys(mine).length ? '<h3 style="margin-top:16px">Your spellings</h3>' + Object.keys(mine).sort().map(function (k) {
+          return '<div class="row"><span class="small" style="flex:1">' + a.esc(k) + ' → <b>' + a.esc(mine[k]) + '</b></span><button class="btn ghost small" data-atunalias="' + a.esc(k) + '" title="Forget this spelling">✕</button></div>';
         }).join('') : '') +
         (noCountry ? '<div class="small faint" style="margin-top:12px">' + noCountry + ' film' + (noCountry === 1 ? ' has' : 's have') + ' no country yet.</div>' : '') +
         '<div style="margin-top:12px"><button class="btn ghost small" data-atpassport>Passport stats →</button></div>' +
@@ -179,12 +190,34 @@ var AtlasLogic = (function () {
   }
 
   function onClick(ev, a) {
-    var t = ev.target.closest('[data-atl],[data-atshow],[data-atpassport]');
+    var t = ev.target.closest('[data-atl],[data-atshow],[data-atpassport],[data-atunalias],[data-atalias]');
     if (!t) return false;
+    if (t.dataset.atalias !== undefined) return true; // the select itself; onChange does the work
+    if (t.dataset.atunalias) { saveAlias(a, t.dataset.atunalias, ''); return true; }
     if (t.dataset.atpassport !== undefined) { if (window.Stats && Stats.tab) Stats.tab('passport'); a.go('stats'); return true; }
     if (t.dataset.atshow) st.show = t.dataset.atshow;
     else { st.sel = t.dataset.atl; st.show = 'all'; }
     a.render();
+    return true;
+  }
+
+  /** Remembers that a typed spelling means a country on the map ('' forgets it). */
+  function saveAlias(a, typed, name) {
+    var M = a.model();
+    var mine = Object.assign({}, (M.raw.fun || {}).atlas_aliases || {});
+    var k = String(typed).trim().toLowerCase();
+    if (name) mine[k] = name; else delete mine[k];
+    M.raw.fun.atlas_aliases = mine;
+    if (name) st.sel = name;
+    a.render();
+    a.call('apiSaveUiSetting', 'atlas_aliases', mine).then(function () {
+      a.toast(name ? '“' + typed + '” now counts as ' + name + ' 🌍' : 'Forgot that spelling', 'ok');
+    }).catch(function (e) { a.toast('Not saved: ' + e.message, 'bad'); });
+  }
+  function onChange(ev, a) {
+    var t = ev.target;
+    if (!t.dataset || t.dataset.atalias === undefined) return false;
+    if (t.value) saveAlias(a, t.dataset.atalias, t.value);
     return true;
   }
 
@@ -202,6 +235,6 @@ var AtlasLogic = (function () {
     tip.innerHTML = '<b>' + App.api.esc(n) + '</b>' + (c ? c.watched + ' watched · ' + (c.films.length - c.watched) + ' to go' : '<span class="faint">No films from here yet</span>');
   });
 
-  App.view('atlas', { render: render, onClick: onClick });
+  App.view('atlas', { render: render, onClick: onClick, onChange: onChange });
 })();
 </script>

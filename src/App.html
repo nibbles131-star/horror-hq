@@ -43,7 +43,8 @@ var App = (function () {
   var HUB_SECTIONS = [
     { id: 'hub', icon: '🏚️', label: 'The Hub' },
     { id: 'web', icon: '🕸️', label: 'Adaptation Web' },
-    { id: 'oracle', icon: '🔮', label: 'The Oracle' }
+    { id: 'oracle', icon: '🔮', label: 'The Oracle' },
+    { id: 'wrapped', icon: '🩸', label: 'Horror Wrapped' }
   ];
   function realmOf(v) {
     if (HUB_SECTIONS.some(function (s) { return s.id === v; })) return 'hub';
@@ -52,7 +53,7 @@ var App = (function () {
   function media() { return window.Media || null; }
   /** Cross-realm modules (the Web, the Oracle, ⌘K search) get every event first, wherever you are. */
   function extras(kind, ev) {
-    return ['Web', 'Oracle', 'HQSearch'].some(function (n) { return window[n] && window[n][kind] && window[n][kind](ev, api); });
+    return ['Web', 'Oracle', 'HQSearch', 'Wrapped'].some(function (n) { return window[n] && window[n][kind] && window[n][kind](ev, api); });
   }
 
   // ------------------------------------------------------------------ helpers
@@ -378,6 +379,8 @@ var App = (function () {
       '<h3>Status</h3><div class="seg">' + statuses.map(function (s) {
         return '<button data-setstatus="' + esc(s) + '" class="' + (f.status === s ? 'on' : '') + '">' + esc(s) + '</button>';
       }).join('') + '</div>' +
+      (f.status === 'Watched' ? '<div class="small muted" style="margin-top:8px">Watched on <input type="date" class="input" id="watchedon" style="width:auto;display:inline-block;padding:4px 8px" value="' +
+        esc(f.watchedOn || '') + '" max="' + esc(HQ.isoToday()) + '">' + (f.watchedOn ? '' : ' <span class="faint">no date yet (seen before dates were kept)</span>') + '</div>' : '') +
 
       '<h3>Rating /10</h3><div class="stars">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (n) {
         return '<button data-setrating="' + n + '" class="' + (f.rating === n ? 'on' : '') + '">' + n + '</button>';
@@ -497,8 +500,15 @@ var App = (function () {
     f.modified = s.modified_at;
   }
 
+  function setWatchedOn(f, date, quiet) {
+    return call('apiSetWatchedOn', f.id, date).then(function (res) {
+      f.watchedOn = res.watched_on; render();
+      if (!quiet) toast(res.watched_on ? 'Watched on ' + fmtDate(res.watched_on) + ' 🗓️' : 'Watch date cleared', 'ok');
+    }).catch(function (e) { render(); toast('Not saved: ' + (e && e.message ? e.message : e), 'bad'); });
+  }
+
   function saveState(f, patch, label) {
-    var before = { viewing_status: f.status, rating_10: f.rating, reaction: f.reaction };
+    var before = { viewing_status: f.status, rating_10: f.rating, reaction: f.reaction, watchedOn: f.watchedOn };
     var optimistic = { viewing_status: f.status, rating_10: f.rating, reaction: f.reaction, version: f.version, modified_at: new Date().toISOString() };
     Object.keys(patch).forEach(function (k) { optimistic[k] = patch[k]; });
     var version = f.version;
@@ -507,13 +517,17 @@ var App = (function () {
     render();
     return call('apiSaveFilmState', f.id, patch, version).then(function (res) {
       applyState(f, res.state);
+      if (!res.conflict) f.watchedOn = res.watched_on || '';
+      // Undoing back to Watched puts the original date back instead of today's.
+      if (!res.conflict && label === 'Undone' && f.status === 'Watched' && patch.watched_was !== undefined && patch.watched_was !== f.watchedOn) setWatchedOn(f, patch.watched_was, true);
       if (res.conflict) {
         toast('That film was changed elsewhere, so I reloaded it. Check and try again.', 'bad');
       } else {
         checkTrophies();
         toast(label + ' • ' + f.title, 'ok', { label: 'Undo', fn: function () {
           var undo = {};
-          Object.keys(patch).forEach(function (k) { undo[k] = before[k]; });
+          Object.keys(patch).forEach(function (k) { if (k !== 'watched_was') undo[k] = before[k]; });
+          if (undo.viewing_status === 'Watched') undo.watched_was = before.watchedOn;
           saveState(f, undo, 'Undone');
         } });
       }
@@ -641,6 +655,7 @@ var App = (function () {
     if (M && media() && media().onChange(ev, api)) return;
     if (M && extras('onChange', ev)) return;
     if (viewHandled('onChange', ev)) return;
+    if (ev.target.id === 'watchedon' && drawerId && M.byId[drawerId]) return setWatchedOn(M.byId[drawerId], ev.target.value);
     var k = ev.target.dataset.lib;
     if (!k) return;
     lib[k] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
@@ -711,7 +726,7 @@ var App = (function () {
   var api = {
     model: function () { return M; }, $: $, esc: esc, call: call, toast: toast, statusChip: statusChip, ratingCell: ratingCell,
     filmLink: filmLink, thumb: thumb, fmtDate: fmtDate, pct: pct, pick: pick, topBar: topBar, render: render, go: go, openFilm: openFilm,
-    options: options, checkTrophies: checkTrophies, view: function () { return view; }, realms: REALMS, closeDrawer: closeDrawer,
+    options: options, checkTrophies: checkTrophies, today: HQ.isoToday, view: function () { return view; }, realms: REALMS, closeDrawer: closeDrawer,
     realmOf: realmOf, sections: function () { return { films: SECTIONS, hub: HUB_SECTIONS }; }, refresh: function () {
       return call('apiBootstrap').then(function (raw) { M = HQ.build(raw); render(); checkTrophies(); });
     }

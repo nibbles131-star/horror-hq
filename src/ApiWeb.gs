@@ -370,6 +370,7 @@ function apiAdopt(sug, opts) {
         if (['Watched', 'DNF', 'Unsure'].indexOf(opts.status) < 0) throw new Error('Unknown status ' + opts.status);
         var stNow = dbIndex('FilmState')[r.film.film_id];
         dbUpdate('FilmState', [{ film_id: r.film.film_id, viewing_status: opts.status, version: (Number(stNow.version) || 1) + 1, modified_at: nowIso_() }]);
+        stampWatched_(r.film.film_id, stNow.viewing_status, opts.status);
       }
       if (opts.dest) {
         var dup = dbRead('CollectionEntries').some(function (e) { return e.collection_id === opts.dest && e.film_id === r.film.film_id; });
@@ -406,6 +407,25 @@ function apiAdopt(sug, opts) {
 
 var ORACLE_SUBJECT_ = /horror|ghost|vampire|zombie|haunt|occult|supernatural|monster|demon|witch|werewolf|gothic|terror|serial murder|serial killer|possession|apocalyp|cthulhu|lovecraft/i;
 
+// What a "Not for me" can teach: the flavours of a pick beyond plain horror.
+var ORACLE_GENRES_ = { 35: 'comedy', 53: 'thriller', 878: 'sci-fi', 14: 'fantasy', 9648: 'mystery', 16: 'animation', 28: 'action', 80: 'crime',
+  10749: 'romance', 12: 'adventure', 10751: 'family', 99: 'documentary', 10759: 'action', 10402: 'music', 37: 'western', 10752: 'war' };
+
+function oracleTag_(prefix, text) {
+  return prefix + ':' + String(text || '').replace(/[;|]/g, ' ').trim().toLowerCase().slice(0, 26);
+}
+
+/** {tag: times passed on}, from the Oracle picks you've said "Not for me" to. */
+function oracleTaste_() {
+  var strikes = {};
+  dbRead('Dismissals').forEach(function (d) {
+    var c = String(d.context || '');
+    if (c.indexOf('oracle|') !== 0) return;
+    c.slice(7).split(';').forEach(function (t) { if (/^[gas]:./.test(t)) strikes[t] = (strikes[t] || 0) + 1; });
+  });
+  return strikes;
+}
+
 function oracleTmdb_(key, seeds, kind) {
   var out = [];
   if (!key || !seeds.length) return out;
@@ -430,10 +450,13 @@ function oracleTmdb_(key, seeds, kind) {
       var g = r.genre_ids || [];
       if (kind === 'film' && g.indexOf(27) < 0) return;
       if (kind === 'tv' && (g.indexOf(10762) >= 0 || g.indexOf(10764) >= 0 || g.indexOf(10767) >= 0)) return;
+      // TMDB has no horror genre for TV; its horror lives under Mystery and Sci-Fi & Fantasy, so a pick needs one of those.
+      if (kind === 'tv' && g.indexOf(9648) < 0 && g.indexOf(10765) < 0) return;
+      var tags = g.filter(function (id) { return ORACLE_GENRES_[id] && !(kind === 'tv' && id === 9648); }).map(function (id) { return 'g:' + ORACLE_GENRES_[id]; });
       out.push({ seed: ready[i], rank: rank, rec: { key: 'tmdb:' + (kind === 'film' ? 'movie' : 'tv') + ':' + r.id, kind: kind,
         title: kind === 'film' ? r.title : r.name, year: mediaYear_(kind === 'film' ? r.release_date : r.first_air_date),
         cover: r.poster_path ? POSTER_BASE_ + r.poster_path : '', blurb: String(r.overview || '').slice(0, 280),
-        tmdb: kind === 'film' ? String(r.id) : '', tmdbtv: kind === 'tv' ? String(r.id) : '' } });
+        tmdb: kind === 'film' ? String(r.id) : '', tmdbtv: kind === 'tv' ? String(r.id) : '', tags: tags } });
     });
   });
   return out;
@@ -458,7 +481,8 @@ function oracleBooks_(seeds) {
             title: d.title, year: d.first_publish_year || null, creator: (d.author_name || []).slice(0, 2).join(', '),
             cover: d.cover_i ? 'https://covers.openlibrary.org/b/id/' + d.cover_i + '-L.jpg' : '', ol: String(d.key).replace('/works/', ''),
             comic: /Graphic|Comic|Manga/.test(bookFormatGuess_((d.subject || []).slice(0, 30), d.title)),
-            blurb: d.author_name && d.author_name[0] === (hit.author_name || [])[0] ? 'Same author' : 'Shares: ' + subjects.join(', ') } });
+            blurb: d.author_name && d.author_name[0] === (hit.author_name || [])[0] ? 'Same author' : 'Shares: ' + subjects.join(', '),
+            tags: (d.author_name && d.author_name[0] ? [oracleTag_('a', d.author_name[0])] : []).concat(ui < subjects.length ? [oracleTag_('s', subjects[ui])] : []) } });
         });
       });
     } catch (e) { /* one seed failing shouldn't sink the rest */ }
@@ -477,11 +501,17 @@ function oracleGames_(seeds) {
         var title = String(p.title).replace(/\s*\((\d{4} )?video game\)$/i, '');
         if (posterTitleKey_(title) === posterTitleKey_(s.title)) return;
         out.push({ seed: s, rank: rank, rec: { key: 'wp:' + p.pageid, kind: 'game', title: title, year: mediaYear_(p.description),
-          cover: (p.thumbnail || {}).source || '', wp: String(p.pageid), blurb: p.description || '' } });
+          cover: (p.thumbnail || {}).source || '', wp: String(p.pageid), blurb: p.description || '', tags: oracleGameTags_(p.description) } });
       });
     } catch (e) { /* skip */ }
   });
   return out;
+}
+
+/** "2014 survival horror video game" -> ['s:survival horror']. */
+function oracleGameTags_(description) {
+  var m = String(description || '').match(/^(?:\d{4}\s+)?(.+?)\s+video\s+game\b/i);
+  return m && m[1].length > 2 && m[1].length < 40 && !/^\d+$/.test(m[1]) ? [oracleTag_('s', m[1])] : [];
 }
 
 /**
@@ -503,9 +533,13 @@ function apiOracle(seedKeys) {
   var dismissed = dbIndex('Dismissals');
   var idx = webHaveIndex_();
   var pool = {};
+  // One pass is a shrug; two on the same flavour is a pattern. An author refused three times stops appearing at all.
+  var taste = oracleTaste_();
+  var learned = Object.keys(taste).filter(function (t) { return taste[t] >= (t.charAt(0) === 'a' ? 3 : 2); }).sort(function (a, b) { return taste[b] - taste[a]; });
   raw.forEach(function (x) {
     var r = x.rec;
     if (!r.title || dismissed[r.key]) return;
+    if ((r.tags || []).some(function (t) { return t.charAt(0) === 'a' && taste[t] >= 3; })) return;
     var have = (r.tmdb && idx.tmdbFilm[r.tmdb]) || (r.tmdbtv && idx.tmdbTv[r.tmdbtv]) || (r.ol && idx.source['openlibrary|/works/' + r.ol]) ||
       (r.wp && idx.source['wikipedia|' + r.wp]) || webFind_(idx, r.kind, r.title, r.year);
     if (have) return;
@@ -513,8 +547,12 @@ function apiOracle(seedKeys) {
     if (p.because.indexOf(x.seed.title) < 0) p.because.push(x.seed.title);
     p.score += Math.max(1, 20 - x.rank);
   });
-  var items = Object.keys(pool).map(function (k) { return pool[k]; }).sort(function (a, b) {
-    return b.because.length - a.because.length || b.score - a.score;
-  }).slice(0, 48);
-  return { items: items, notes: notes };
+  var rank = function (p) {
+    var penalty = (p.tags || []).reduce(function (t, tag) { return t + (taste[tag] >= 2 ? (taste[tag] - 1) * 12 : 0); }, 0);
+    return p.because.length * 20 + p.score - penalty;
+  };
+  var items = Object.keys(pool).map(function (k) { return pool[k]; }).sort(function (a, b) { return rank(b) - rank(a); }).slice(0, 48);
+  return { items: items, notes: notes, learned: learned.slice(0, 8).map(function (t) {
+    return { tag: t, passes: taste[t], text: (t.charAt(0) === 'a' ? 'no more ' : 'less ') + t.slice(2) };
+  }) };
 }

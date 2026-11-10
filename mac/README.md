@@ -43,6 +43,16 @@ TMDB (films, TV), Open Library (books) and Wikipedia's "more like this" (games).
 Passport as a pre-drawn world map (Natural Earth via d3-geo, embedded so it works offline). ⌘K (`ViewSearch.html`) searches
 every realm, list and section. The Franchise Filmstrip moved out of Collections into its own section.
 
+Stage 8: the "do all of them" round. Films get a watched date (`FilmDates`, stamped when a film becomes Watched, editable in
+the drawer; films seen before this have none) and Horror Wrapped (`ViewWrapped.html`) turns those plus the books/shows/games
+finished dates into a year in review, a weekly streak and a kill log. The hub gains doors to the Web, the Oracle and Wrapped,
+plus "Unfinished threads" (linked pairs where one side is done). The Oracle learns from "Not for me" (genre, subject and
+author tags ride in the dismissal's context; two passes push a flavour down, three drop an author) and TV picks must be
+Mystery or Sci-Fi & Fantasy, TMDB's stand-ins for horror. The Atlas takes your own "this spelling means…" fixes (setting
+`atlas_aliases`). On the Mac side, each day's data file is also copied into iCloud Drive › Horror HQ Backups (14 kept, written
+half a minute after changes settle; skipped quietly when iCloud Drive is off), and every non-TMDB cover is cached on disk too
+(`poster://localhost/ext/<hex of the https address>`), falling back to the live site if the cache can't fetch it.
+
 Build: push a change under `mac/` and the "Mac app" workflow publishes `Horror-HQ.dmg` as a
 pre-release. Locally: `npm ci && npm run build` (needs Rust; on Linux, libwebkit2gtk-4.1-dev).
 Icons come from `art/icon.svg` → `art/icon.png` → `npm run icons`.

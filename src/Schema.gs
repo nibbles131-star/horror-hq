@@ -55,7 +55,7 @@ var MEDIA_KINDS = {
 };
 
 // Tables added after the first release: a workbook that predates them grows the tab on first use.
-var LATE_TABLES_ = { MediaItems: true, MediaLists: true, MediaListEntries: true, WebLinks: true, WebNodes: true, Dismissals: true };
+var LATE_TABLES_ = { MediaItems: true, MediaLists: true, MediaListEntries: true, WebLinks: true, WebNodes: true, Dismissals: true, FilmDates: true };
 
 /**
  * Column types: s = string (default), n = number or blank, b = TRUE/FALSE,
@@ -193,6 +193,10 @@ var SCHEMA = {
   Dismissals: {
     key: 'key',
     cols: ['key', 'title', 'context', 'created_at:t']
+  },
+  FilmDates: {
+    key: 'film_id',
+    cols: ['film_id', 'watched_on:d', 'modified_at:t']
   },
   MigrationExceptions: {
     key: 'exception_id',

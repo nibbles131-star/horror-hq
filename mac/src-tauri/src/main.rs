@@ -1,7 +1,8 @@
 // Horror HQ for Mac. The screens and their logic are the Apps Script app's own files,
 // bundled by build_web.js; this side reads and writes the data file in Documents, keeps
-// daily backups of it, serves posters from a cache on disk (poster://localhost/w342/abc.jpg),
-// and does the few things a web page can't: saving downloads, spreadsheet export, Finder and links.
+// daily backups of it (and a second set in iCloud Drive when that is switched on), serves posters and
+// covers from a cache on disk (poster://localhost/w342/abc.jpg), and does the few things a web page
+// can't: saving downloads, spreadsheet export, Finder and links.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod updater;
@@ -16,6 +17,9 @@ const FOLDER: &str = "Horror HQ";
 const FILE: &str = "Horror HQ Data.json";
 const BACKUPS_KEPT: usize = 14;
 const TMDB_IMAGES: &str = "https://image.tmdb.org/t/p/";
+const OFFSITE_FOLDER: &str = "Horror HQ Backups";
+const COVER_LIMIT: u64 = 12 * 1024 * 1024;
+const AGENT: &str = "HorrorHQ-Mac (personal film tracker)";
 
 fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let paths = app.path();
@@ -68,6 +72,72 @@ fn backup_now(app: tauri::AppHandle, json: String, stamp: String) -> Result<Stri
     let path = backups.join(format!("Horror HQ Snapshot {}.json", clean_name(&stamp)));
     fs::write(&path, json).map_err(|e| format!("Couldn't write {}: {}", path.display(), e))?;
     Ok(path.display().to_string())
+}
+
+/// Where the off-Mac copies go: a folder in iCloud Drive, when iCloud Drive is switched on for this Mac.
+/// (HQ_OFFSITE_DIR points it somewhere else, for testing.)
+fn offsite_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("HQ_OFFSITE_DIR") {
+        if !dir.is_empty() {
+            return Some(PathBuf::from(dir));
+        }
+    }
+    let cloud = app.path().home_dir().ok()?.join("Library/Mobile Documents/com~apple~CloudDocs");
+    if cloud.is_dir() { Some(cloud.join(OFFSITE_FOLDER)) } else { None }
+}
+
+fn dated_copies(dir: &Path) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = fs::read_dir(dir)
+        .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    found.retain(|p| p.file_name().map_or(false, |n| {
+        let n = n.to_string_lossy();
+        n.starts_with("Horror HQ Data ") && n.ends_with(".json")
+    }));
+    // Names sort by date, so the oldest come first.
+    found.sort();
+    found
+}
+
+fn offsite_report(dir: Option<PathBuf>) -> serde_json::Value {
+    match dir {
+        None => serde_json::json!({ "available": false }),
+        Some(dir) => {
+            let copies = dated_copies(&dir);
+            let latest = copies.last().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string());
+            serde_json::json!({ "available": true, "folder": dir.display().to_string(), "copies": copies.len(), "latest": latest })
+        }
+    }
+}
+
+/// How the iCloud copies stand: {available, folder, copies, latest}.
+#[tauri::command]
+fn offsite_status(app: tauri::AppHandle) -> serde_json::Value {
+    offsite_report(offsite_dir(&app))
+}
+
+/// Copies the data file into iCloud Drive as today's copy (replacing an earlier one from today) and keeps
+/// the newest 14 days. Called a little while after changes settle, so iCloud isn't re-uploading on every click.
+#[tauri::command]
+fn offsite_backup(app: tauri::AppHandle, day: String) -> Result<serde_json::Value, String> {
+    let dir = match offsite_dir(&app) {
+        Some(dir) => dir,
+        None => return Ok(offsite_report(None)),
+    };
+    let source = data_dir(&app)?.join(FILE);
+    if !source.exists() || !is_day(&day) {
+        return Ok(offsite_report(Some(dir)));
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {}", dir.display(), e))?;
+    let target = dir.join(format!("Horror HQ Data {}.json", day));
+    let tmp = dir.join(format!(".Horror HQ Data {}.tmp", day));
+    fs::copy(&source, &tmp).map_err(|e| format!("Couldn't copy to {}: {}", dir.display(), e))?;
+    fs::rename(&tmp, &target).map_err(|e| format!("Couldn't save {}: {}", target.display(), e))?;
+    let mut old = dated_copies(&dir);
+    while old.len() > BACKUPS_KEPT {
+        let _ = fs::remove_file(old.remove(0));
+    }
+    Ok(offsite_report(Some(dir)))
 }
 
 /// A file the page wanted to download (base64), saved into Downloads without overwriting anything.
@@ -231,6 +301,9 @@ fn backup(dir: &Path, path: &Path, day: &str) -> Result<(), String> {
 /// downloaded the first time it is asked for.
 fn poster(cache: &Path, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let rel = request.uri().path().trim_start_matches('/').to_string();
+    if let Some(hex) = rel.strip_prefix("ext/") {
+        return cover(cache, hex);
+    }
     let safe = !rel.is_empty()
         && !rel.contains("..")
         && rel.chars().all(|c| c.is_ascii_alphanumeric() || "._-/".contains(c));
@@ -253,6 +326,66 @@ fn poster(cache: &Path, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             Err(_) => reply(502, "text/plain", b"poster download failed".to_vec()),
         },
         Err(_) => reply(404, "text/plain", b"poster not available offline".to_vec()),
+    }
+}
+
+/// poster://localhost/ext/<the https address, hex-encoded> -> a cached copy of any other cover (book,
+/// game and show art lives on Open Library, Google Books, TVmaze and Wikipedia). Only real images are kept.
+fn cover(cache: &Path, hex: &str) -> Response<Vec<u8>> {
+    let url = match unhex(hex).and_then(|b| String::from_utf8(b).ok()) {
+        Some(url) if url.starts_with("https://") && url.len() < 2000 => url,
+        _ => return reply(400, "text/plain", b"bad cover address".to_vec()),
+    };
+    let file = cache.join("ext").join(format!("{:016x}", fnv1a(url.as_bytes())));
+    if let Ok(bytes) = fs::read(&file) {
+        if let Some(kind) = image_kind(&bytes) {
+            return reply(200, kind, bytes);
+        }
+    }
+    let fetched = ureq::get(&url)
+        .header("User-Agent", AGENT)
+        .call()
+        .ok()
+        .and_then(|mut res| res.body_mut().with_config().limit(COVER_LIMIT).read_to_vec().ok());
+    match fetched {
+        Some(bytes) => match image_kind(&bytes) {
+            Some(kind) => {
+                if let Some(parent) = file.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::write(&file, &bytes);
+                reply(200, kind, bytes)
+            }
+            None => reply(502, "text/plain", b"not an image".to_vec()),
+        },
+        None => reply(404, "text/plain", b"cover not available offline".to_vec()),
+    }
+}
+
+fn unhex(hex: &str) -> Option<Vec<u8>> {
+    if hex.is_empty() || hex.len() % 2 != 0 || !hex.is_ascii() {
+        return None;
+    }
+    (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok()).collect()
+}
+
+/// A stable name for a cached cover (FNV-1a: tiny, and the same on every run, unlike Rust's own hasher).
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3))
+}
+
+/// The image type from the file's first bytes, or None when it isn't a picture we show.
+fn image_kind(b: &[u8]) -> Option<&'static str> {
+    if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if b.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("image/png")
+    } else if b.starts_with(b"GIF8") {
+        Some("image/gif")
+    } else if b.len() > 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
     }
 }
 
@@ -295,7 +428,7 @@ fn main() {
                 let _ = app.emit(id, ());
             }
         })
-        .invoke_handler(tauri::generate_handler![load_data, save_data, data_path, backup_now, save_download, export_xlsx, reveal, open_url, app_build, updater::check_update, updater::install_update])
+        .invoke_handler(tauri::generate_handler![load_data, save_data, data_path, backup_now, offsite_status, offsite_backup, save_download, export_xlsx, reveal, open_url, app_build, updater::check_update, updater::install_update])
         .run(tauri::generate_context!())
         .expect("error while running Horror HQ");
 }

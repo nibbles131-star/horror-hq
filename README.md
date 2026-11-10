@@ -2,6 +2,10 @@
 
 A private Google Apps Script web app that replaces the 31-tab "Horror Movie Master Sheet".
 
+> **Since 10 November 2026 the Mac app in `mac/` is the live Horror HQ.** The Google Apps Script version is retired: it still
+> opens and its data is untouched, but it is frozen at the October export and gets no more releases. Everything below about
+> the workbook, migration and Drive deploys is kept as history and for the code the Mac app still shares (`src/`).
+
 - **Old workbook** (read-only backup): `1K4jvoXbBLMT13XXTlUDAgbo3U_VD-wXZtI-IMCQunQw`
 - **Database workbook** (the app's data, one tab per table): `1h1sgPL6_5b1womrFQoqF-Gob7rlsFYZyFozaTJyR4Zc`
 - The Apps Script project is bound to the database workbook.

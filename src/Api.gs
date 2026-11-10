@@ -77,22 +77,56 @@ function apiBootstrap() {
     openExceptions: openExceptions,
     media: mediaBootstrap_(),
     web: webBootstrap_(),
+    watched: watchedBootstrap_(),
     posters: getSetting('poster_provider', null),
     fun: { hall_of_fame: getSetting('hall_of_fame', []), bingo_card: getSetting('bingo_card', null), trophies_seen: getSetting('trophies_seen', null),
-      franchise_branches: getSetting('franchise_branches', {}), franchises_done: getSetting('franchises_done', null) },
+      franchise_branches: getSetting('franchise_branches', {}), franchises_done: getSetting('franchises_done', null),
+      atlas_aliases: getSetting('atlas_aliases', {}) },
     version: PropertiesService.getScriptProperties().getProperty('INSTALLED_VERSION') || 'dev',
     loadMs: Date.now() - t0
   };
 }
 
 /** Small per-app preferences for the fun pages (Hall of Fame picks, the Bingo card, trophies and franchises already celebrated, filmstrip branches). */
-var UI_SETTINGS_ = ['hall_of_fame', 'bingo_card', 'trophies_seen', 'franchise_branches', 'franchises_done'];
+var UI_SETTINGS_ = ['hall_of_fame', 'bingo_card', 'trophies_seen', 'franchise_branches', 'franchises_done', 'atlas_aliases'];
 function apiSaveUiSetting(key, value) {
   if (UI_SETTINGS_.indexOf(key) < 0) throw new Error('Unknown setting ' + key);
   if (JSON.stringify(value).length > 45000) throw new Error('That is too big to save.');
   return withWriteLock_(function () {
     setSetting(key, value);
     return value;
+  });
+}
+
+/** {film_id: 'yyyy-MM-dd'}: the day each film was marked Watched (only films marked since dates began). */
+function watchedBootstrap_() {
+  var out = {};
+  dbRead('FilmDates').forEach(function (d) { if (d.watched_on) out[d.film_id] = d.watched_on; });
+  return out;
+}
+
+/** Keeps the watched date in step with a status change: stamped today on becoming Watched, dropped on leaving it. */
+function stampWatched_(filmId, was, now) {
+  if (was === now) return;
+  var cur = dbIndex('FilmDates')[filmId];
+  if (now === 'Watched' && !cur) dbAppend('FilmDates', [{ film_id: filmId, watched_on: mediaToday_(), modified_at: nowIso_() }]);
+  if (was === 'Watched' && now !== 'Watched' && cur) dbDelete('FilmDates', [filmId]);
+  dbClearMemo();
+}
+
+/** Sets or clears (date = '') the day a film was watched. */
+function apiSetWatchedOn(filmId, date) {
+  return withWriteLock_(function () {
+    if (!dbIndex('Films')[filmId]) throw new Error('Unknown film ' + filmId);
+    date = String(date || '');
+    if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + 'T12:00:00Z').getTime()))) throw new Error('Dates look like 2026-10-31.');
+    if (date && date > mediaToday_()) throw new Error("That date hasn't happened yet.");
+    var cur = dbIndex('FilmDates')[filmId];
+    if (!date) { if (cur) dbDelete('FilmDates', [filmId]); }
+    else if (cur) dbUpdate('FilmDates', [{ film_id: filmId, watched_on: date, modified_at: nowIso_() }]);
+    else dbAppend('FilmDates', [{ film_id: filmId, watched_on: date, modified_at: nowIso_() }]);
+    audit_('set-watched-on', 'FilmDates', filmId, cur ? stripRow_(cur) : null, { watched_on: date });
+    return { film_id: filmId, watched_on: date };
   });
 }
 
@@ -139,8 +173,10 @@ function apiSaveFilmState(filmId, patch, expectedVersion) {
     next.version = Number(cur.version || 0) + 1;
     next.modified_at = nowIso_();
     dbUpdate('FilmState', [next]);
+    if (next.viewing_status) stampWatched_(filmId, cur.viewing_status, next.viewing_status);
     audit_('save-film-state', 'FilmState', filmId, stripRow_(cur), next);
-    return { conflict: false, state: stripRow_(dbIndex('FilmState')[filmId]) };
+    var when = dbIndex('FilmDates')[filmId];
+    return { conflict: false, state: stripRow_(dbIndex('FilmState')[filmId]), watched_on: when ? when.watched_on : '' };
   });
 }
 

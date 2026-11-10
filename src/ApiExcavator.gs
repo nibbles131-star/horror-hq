@@ -202,6 +202,7 @@ function apiDecideCandidate(candidateId, decision, reason, opts) {
         next.raw_rating = String(next.rating_10);
       }
       dbUpdate('FilmState', [next]);
+      stampWatched_(film.film_id, st.viewing_status, 'Watched');
       dbClearMemo();
       out.state = stripRow_(dbIndex('FilmState')[film.film_id]);
       out.memory = setMemory_(film.film_id, { discovery_status: '👁️ Seen / unlisted' }, now);
